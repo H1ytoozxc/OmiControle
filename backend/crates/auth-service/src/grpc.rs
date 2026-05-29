@@ -150,6 +150,118 @@ impl pb::auth_service_server::AuthService for AuthGrpc {
         self.app.reject(tenant, user).await.map_err(map_err)?;
         Ok(Response::new(pb::Empty {}))
     }
+
+    async fn get_me(
+        &self,
+        req: Request<pb::RequestContext>,
+    ) -> Result<Response<pb::UserProfile>, Status> {
+        let ctx = req.into_inner();
+        let user_id = parse_uuid(&ctx.actor.as_ref().map(|a| a.id.as_str()).unwrap_or(""))
+            .map_err(|_| Status::unauthenticated("missing actor"))?;
+        let user = self.app.get_me(user_id).await.map_err(map_err)?;
+        Ok(Response::new(user_to_profile(user)))
+    }
+
+    async fn update_me(
+        &self,
+        req: Request<pb::UpdateMeRequest>,
+    ) -> Result<Response<pb::UserProfile>, Status> {
+        let r = req.into_inner();
+        let ctx = r.context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let user_id = parse_uuid(&ctx.actor.as_ref().map(|a| a.id.as_str()).unwrap_or(""))
+            .map_err(|_| Status::unauthenticated("missing actor"))?;
+        let user = self.app.update_me(user_id, &r.display_name, &r.bio, &r.email).await.map_err(map_err)?;
+        Ok(Response::new(user_to_profile(user)))
+    }
+
+    async fn change_password(
+        &self,
+        req: Request<pb::ChangePasswordRequest>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let r = req.into_inner();
+        let ctx = r.context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let user_id = parse_uuid(&ctx.actor.as_ref().map(|a| a.id.as_str()).unwrap_or(""))
+            .map_err(|_| Status::unauthenticated("missing actor"))?;
+        self.app.change_password(user_id, &r.current_password, &r.new_password).await.map_err(map_err)?;
+        Ok(Response::new(pb::Empty {}))
+    }
+
+    async fn delete_me(
+        &self,
+        req: Request<pb::RequestContext>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let ctx = req.into_inner();
+        let user_id = parse_uuid(&ctx.actor.as_ref().map(|a| a.id.as_str()).unwrap_or(""))
+            .map_err(|_| Status::unauthenticated("missing actor"))?;
+        self.app.delete_me(user_id).await.map_err(map_err)?;
+        Ok(Response::new(pb::Empty {}))
+    }
+
+    async fn issue_service_token(
+        &self,
+        req: Request<pb::IssueServiceTokenRequest>,
+    ) -> Result<Response<pb::ServiceTokenCreated>, Status> {
+        let r = req.into_inner();
+        let ctx = r.context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let tenant = parse_uuid(&ctx.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let user_id = parse_uuid(&ctx.actor.as_ref().map(|a| a.id.as_str()).unwrap_or(""))
+            .map_err(|_| Status::unauthenticated("missing actor"))?;
+        let (tok, full_token) = self.app.issue_service_token(tenant, user_id, &r.name).await.map_err(map_err)?;
+        Ok(Response::new(pb::ServiceTokenCreated {
+            user_id: user_id.to_string(),
+            token_id: tok.id.to_string(),
+            name: tok.name,
+            prefix: tok.prefix,
+            token: full_token,
+            created_at: Some(Timestamp { seconds: tok.created_at.unix_timestamp(), nanos: 0 }),
+        }))
+    }
+
+    async fn list_service_tokens(
+        &self,
+        req: Request<pb::RequestContext>,
+    ) -> Result<Response<pb::ServiceTokensResponse>, Status> {
+        let ctx = req.into_inner();
+        let tenant = parse_uuid(&ctx.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let tokens = self.app.list_service_tokens(tenant).await.map_err(map_err)?;
+        let items = tokens.into_iter().map(|t| pb::ServiceTokenDto {
+            token_id: t.id.to_string(),
+            name: t.name,
+            prefix: t.prefix,
+            created_at: Some(Timestamp { seconds: t.created_at.unix_timestamp(), nanos: 0 }),
+            last_used_at: t.last_used_at.map(|ts| Timestamp { seconds: ts.unix_timestamp(), nanos: 0 }),
+        }).collect();
+        Ok(Response::new(pb::ServiceTokensResponse { tokens: items }))
+    }
+
+    async fn revoke_service_token(
+        &self,
+        req: Request<pb::RevokeServiceTokenRequest>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let r = req.into_inner();
+        let ctx = r.context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let tenant = parse_uuid(&ctx.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let token_id = parse_uuid(&r.token_id)
+            .map_err(|_| Status::invalid_argument("bad token_id"))?;
+        self.app.revoke_service_token(token_id, tenant).await.map_err(map_err)?;
+        Ok(Response::new(pb::Empty {}))
+    }
+}
+
+fn user_to_profile(user: crate::domain::User) -> pb::UserProfile {
+    pb::UserProfile {
+        user_id: user.id.to_string(),
+        tenant_id: user.tenant_id.to_string(),
+        email: user.email,
+        display_name: user.display_name.unwrap_or_default(),
+        bio: user.bio.unwrap_or_default(),
+        status: format!("{:?}", user.status).to_lowercase(),
+        created_at: Some(Timestamp { seconds: user.created_at.unix_timestamp(), nanos: 0 }),
+        last_login_at: user.last_login_at.map(|ts| Timestamp { seconds: ts.unix_timestamp(), nanos: 0 }),
+    }
 }
 
 fn parse_uuid(s: &str) -> Result<Uuid, ()> {

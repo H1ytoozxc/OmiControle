@@ -1,12 +1,31 @@
 "use client";
 
 import * as React from "react";
-import { Key, Plug, Server, Network, GitBranch, Boxes, Copy, Check, Plus } from "lucide-react";
+import { Key, Plug, Server, Network, GitBranch, Boxes, Copy, Check, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Plate, PlateHeader, PlateTitle, PlateBody, PlateFooter,
+  Plate, PlateHeader, PlateTitle, PlateBody,
   Button, Badge, Modal,
 } from "@/components/primitives";
+import { api } from "@/lib/api/client";
+
+interface ServiceToken {
+  token_id: string;
+  name: string;
+  prefix: string;
+  created_at?: string;
+  last_used_at?: string;
+}
+
+interface ServiceTokensResp { items: ServiceToken[] }
+interface ServiceTokenCreated {
+  token_id: string;
+  name: string;
+  prefix: string;
+  token: string;
+  created_at?: string;
+}
 
 const SECTIONS = [
   { id: "api-keys",      label: "API keys",        icon: Key,       blurb: "Personal access tokens and service credentials." },
@@ -18,11 +37,35 @@ const SECTIONS = [
 ];
 
 export default function SettingsPage() {
+  const qc = useQueryClient();
   const [tokenModal, setTokenModal] = React.useState(false);
   const [tokenName, setTokenName] = React.useState("");
   const [issuedToken, setIssuedToken] = React.useState<string | null>(null);
-  const [issuing, setIssuing] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+
+  const tokensQuery = useQuery<ServiceTokensResp>({
+    queryKey: ["service-tokens"],
+    queryFn: () => api<ServiceTokensResp>("/v1/tokens"),
+  });
+
+  const createMutation = useMutation<ServiceTokenCreated, Error, string>({
+    mutationFn: (name) => api<ServiceTokenCreated>("/v1/tokens", { method: "POST", body: { name } }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["service-tokens"] });
+      setIssuedToken(data.token);
+      toast.success("Token issued — copy it now, it won't be shown again");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const revokeMutation = useMutation<void, Error, string>({
+    mutationFn: (id) => api(`/v1/tokens/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["service-tokens"] });
+      toast.success("Token revoked");
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   function scrollTo(id: string) {
     const el = document.getElementById(id);
@@ -33,18 +76,7 @@ export default function SettingsPage() {
   async function issueToken(e: React.FormEvent) {
     e.preventDefault();
     if (!tokenName.trim()) { toast.error("Enter a token name"); return; }
-    setIssuing(true);
-    try {
-      // Stub — actual token issuance endpoint not yet implemented
-      await new Promise((r) => setTimeout(r, 400));
-      const stub = "sq_" + crypto.randomUUID().replace(/-/g, "").slice(0, 40);
-      setIssuedToken(stub);
-      toast.success("Token issued — copy it now, it won't be shown again");
-    } catch {
-      toast.error("Token issuance not yet available");
-    } finally {
-      setIssuing(false);
-    }
+    createMutation.mutate(tokenName.trim());
   }
 
   function copyToken() {
@@ -59,6 +91,8 @@ export default function SettingsPage() {
     setTokenName("");
     setIssuedToken(null);
   }
+
+  const tokens = tokensQuery.data?.items ?? [];
 
   return (
     <div className="space-y-5">
@@ -104,20 +138,47 @@ export default function SettingsPage() {
       {/* API keys section */}
       <Plate id="api-keys" className="fade-up" style={{ ["--d" as never]: "160ms" }}>
         <PlateHeader>
-          <PlateTitle label="Service tokens" subtle="0 active" />
+          <PlateTitle
+            label="Service tokens"
+            subtle={tokens.length > 0 ? `${tokens.length} active` : "0 active"}
+          />
           <Button size="sm" variant="ember" onClick={() => setTokenModal(true)}>
             <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />Issue token
           </Button>
         </PlateHeader>
         <PlateBody>
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-[13px] text-bone-muted mb-4">
-              No service tokens yet. Issue a token to authenticate CI pipelines and integrations.
-            </p>
-            <Button size="md" variant="outline" onClick={() => setTokenModal(true)}>
-              <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />Issue first token
-            </Button>
-          </div>
+          {tokens.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-[13px] text-bone-muted mb-4">
+                No service tokens yet. Issue a token to authenticate CI pipelines and integrations.
+              </p>
+              <Button size="md" variant="outline" onClick={() => setTokenModal(true)}>
+                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />Issue first token
+              </Button>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/[0.04]">
+              {tokens.map((tok) => (
+                <div key={tok.token_id} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] text-bone truncate">{tok.name}</p>
+                    <p className="text-[11px] font-mono text-bone-dim mt-0.5">
+                      {tok.prefix}… · created {tok.created_at ? new Date(tok.created_at).toLocaleDateString() : "—"}
+                      {tok.last_used_at && ` · last used ${new Date(tok.last_used_at).toLocaleDateString()}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => revokeMutation.mutate(tok.token_id)}
+                    disabled={revokeMutation.isPending}
+                    className="shrink-0 text-flame/60 hover:text-flame transition-colors"
+                    aria-label="Revoke token"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </PlateBody>
       </Plate>
 
@@ -221,8 +282,8 @@ export default function SettingsPage() {
             </label>
             <div className="flex gap-2 justify-end pt-1">
               <Button type="button" variant="outline" size="sm" onClick={closeTokenModal}>Cancel</Button>
-              <Button type="submit" variant="ember" size="sm" disabled={issuing}>
-                {issuing ? "Issuing…" : "Issue token"}
+              <Button type="submit" variant="ember" size="sm" disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Issuing…" : "Issue token"}
               </Button>
             </div>
           </form>

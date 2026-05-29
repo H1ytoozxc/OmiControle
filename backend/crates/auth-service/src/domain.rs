@@ -10,6 +10,7 @@ pub struct User {
     pub tenant_id: Uuid,
     pub email: String,
     pub display_name: Option<String>,
+    pub bio: Option<String>,
     pub status: UserStatus,
     pub mfa_enabled: bool,
     pub created_at: OffsetDateTime,
@@ -33,6 +34,19 @@ pub struct NewUser {
     pub email: String,
     pub display_name: Option<String>,
     pub password_hash: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServiceToken {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub created_by: Uuid,
+    pub name: String,
+    pub token_sha256: [u8; 32],
+    pub prefix: String,
+    pub created_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone)]

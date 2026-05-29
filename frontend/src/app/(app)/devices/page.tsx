@@ -4,21 +4,74 @@ import * as React from "react";
 import Link from "next/link";
 import { Filter, Search, Plus, Copy, Check, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody,
-  Button, Badge, Modal,
+  Button, Badge, Modal, SignalDot,
 } from "@/components/primitives";
 import { useT } from "@/lib/i18n";
 import { api } from "@/lib/api/client";
 
+interface Device {
+  id: string;
+  tenant_id: string;
+  name: string;
+  platform: string;
+  agent_version: string;
+  status: string;
+  enrolled_at?: string;
+  last_seen_at?: string;
+}
+
+interface DeviceListResp {
+  items: Device[];
+  next_cursor?: string;
+}
+
+type StatusFilter = "all" | "online" | "offline" | "warn";
+
+function statusTone(status: string): "mint" | "ember" | "flame" | "bone" {
+  switch (status.toLowerCase()) {
+    case "online": return "mint";
+    case "warn":   return "ember";
+    case "error":
+    case "crit":   return "flame";
+    default:       return "bone";
+  }
+}
+
+function statusState(status: string): "ok" | "warn" | "crit" | "offline" {
+  switch (status.toLowerCase()) {
+    case "online": return "ok";
+    case "warn":   return "warn";
+    case "error":
+    case "crit":   return "crit";
+    default:       return "offline";
+  }
+}
+
 export default function DevicesPage() {
   const t = useT().devices;
   const [search, setSearch] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [enrollOpen, setEnrollOpen] = React.useState(false);
   const [enrollCode, setEnrollCode] = React.useState<string | null>(null);
   const [enrollExpiry, setEnrollExpiry] = React.useState<string | null>(null);
   const [enrolling, setEnrolling] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+
+  const devicesQuery = useQuery<DeviceListResp>({
+    queryKey: ["devices", statusFilter],
+    queryFn: () => api<DeviceListResp>(
+      `/v1/devices${statusFilter !== "all" ? `?status=${statusFilter}` : ""}`
+    ),
+  });
+
+  const devices = (devicesQuery.data?.items ?? []).filter((d) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return d.name.toLowerCase().includes(q) || d.platform.toLowerCase().includes(q) || d.id.includes(q);
+  });
 
   async function startEnroll() {
     setEnrolling(true);
@@ -53,6 +106,13 @@ export default function DevicesPage() {
     toast.success("Enrollment code copied");
   }
 
+  const statusFilters: { value: StatusFilter; label: string; tone: "mint" | "ember" | "flame" | "bone" }[] = [
+    { value: "all",     label: "all",     tone: "bone" },
+    { value: "online",  label: "online",  tone: "mint" },
+    { value: "warn",    label: "warn",    tone: "ember" },
+    { value: "offline", label: "offline", tone: "bone" },
+  ];
+
   return (
     <div className="space-y-5">
       <header className="flex items-end justify-between gap-4 fade-up">
@@ -82,30 +142,64 @@ export default function DevicesPage() {
 
       <Plate className="fade-up" style={{ ["--d" as never]: "80ms" }}>
         <PlateHeader>
-          <PlateTitle label={t.title} subtle="0" />
+          <PlateTitle label={t.title} subtle={devicesQuery.isLoading ? "…" : String(devices.length)} />
           <div className="flex items-center gap-2">
-            <Badge size="xs" tone="bone">all</Badge>
-            {(["ok", "warn", "crit", "offline"] as const).map((s) => (
-              <Badge key={s} size="xs" tone={s === "ok" ? "mint" : s === "warn" ? "ember" : s === "crit" ? "flame" : "bone"}>{s}</Badge>
+            {statusFilters.map((f) => (
+              <button key={f.value} onClick={() => setStatusFilter(f.value)}>
+                <Badge
+                  size="xs"
+                  tone={f.tone}
+                  className={statusFilter === f.value ? "ring-1 ring-white/20" : "opacity-60 hover:opacity-100"}
+                >
+                  {f.label}
+                </Badge>
+              </button>
             ))}
           </div>
         </PlateHeader>
         <PlateBody>
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-12 h-12 rounded-md bg-ink-100 border border-white/[0.08] grid place-items-center mb-4">
-              <Plus className="w-5 h-5 text-bone-dim" strokeWidth={1.4} />
+          {devicesQuery.isLoading ? (
+            <div className="flex items-center justify-center py-20 gap-3 text-bone-muted text-[13px]">
+              <RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.6} />
+              Loading devices…
             </div>
-            <p className="text-[14px] text-bone mb-1">{t.empty}</p>
-            <p className="text-[12.5px] text-bone-muted max-w-[320px] leading-relaxed mb-5">{t.emptyNote}</p>
-            <div className="flex gap-2">
-              <Button variant="ember" size="md" onClick={openEnroll}>
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />{t.enroll}
-              </Button>
-              <Button variant="outline" size="md" asChild>
-                <Link href="#">Docs</Link>
-              </Button>
+          ) : devices.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-12 h-12 rounded-md bg-ink-100 border border-white/[0.08] grid place-items-center mb-4">
+                <Plus className="w-5 h-5 text-bone-dim" strokeWidth={1.4} />
+              </div>
+              <p className="text-[14px] text-bone mb-1">{t.empty}</p>
+              <p className="text-[12.5px] text-bone-muted max-w-[320px] leading-relaxed mb-5">{t.emptyNote}</p>
+              <div className="flex gap-2">
+                <Button variant="ember" size="md" onClick={openEnroll}>
+                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />{t.enroll}
+                </Button>
+                <Button variant="outline" size="md" asChild>
+                  <Link href="#">Docs</Link>
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="divide-y divide-white/[0.04]">
+              {devices.map((d) => (
+                <Link
+                  key={d.id}
+                  href={`/devices/${d.id}`}
+                  className="flex items-center gap-4 py-3 first:pt-0 last:pb-0 hover:bg-white/[0.02] transition-colors -mx-4 px-4 rounded-sm"
+                >
+                  <SignalDot state={statusState(d.status)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] text-bone truncate">{d.name || d.id}</p>
+                    <p className="text-[11px] font-mono text-bone-dim mt-0.5 truncate">
+                      {d.platform} · v{d.agent_version}
+                      {d.last_seen_at && ` · ${new Date(d.last_seen_at).toLocaleString()}`}
+                    </p>
+                  </div>
+                  <Badge size="xs" tone={statusTone(d.status)}>{d.status}</Badge>
+                </Link>
+              ))}
+            </div>
+          )}
         </PlateBody>
       </Plate>
 
@@ -128,7 +222,6 @@ export default function DevicesPage() {
               Valid for <span className="text-bone font-mono">10 minutes</span>.
             </p>
 
-            {/* big code display */}
             <div className="flex items-center gap-3 p-4 rounded-sm bg-ink border border-white/[0.10]">
               <span className="flex-1 font-mono text-[22px] tracking-[0.2em] text-bone text-center select-all">
                 {enrollCode}

@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::domain::{NewUser, RefreshToken, Session, User, UserStatus};
+use crate::domain::{NewUser, RefreshToken, ServiceToken, Session, User, UserStatus};
 
 #[async_trait]
 pub trait UserRepository: Send + Sync {
@@ -15,6 +15,15 @@ pub trait UserRepository: Send + Sync {
     async fn create(&self, user: &NewUser) -> anyhow::Result<()>;
     async fn list_pending(&self, tenant_id: Uuid) -> anyhow::Result<Vec<User>>;
     async fn delete(&self, id: Uuid) -> anyhow::Result<()>;
+    async fn update_profile(&self, id: Uuid, display_name: &str, bio: &str, email: &str) -> anyhow::Result<()>;
+    async fn update_password(&self, id: Uuid, hash: &str) -> anyhow::Result<()>;
+}
+
+#[async_trait]
+pub trait ServiceTokenRepository: Send + Sync {
+    async fn create(&self, tok: &ServiceToken) -> anyhow::Result<()>;
+    async fn list_active(&self, tenant_id: Uuid) -> anyhow::Result<Vec<ServiceToken>>;
+    async fn revoke(&self, id: Uuid, tenant_id: Uuid) -> anyhow::Result<()>;
 }
 
 #[async_trait]

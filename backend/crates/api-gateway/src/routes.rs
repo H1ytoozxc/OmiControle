@@ -82,6 +82,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/auth/register",  post(auth_register))
         .route("/v1/auth/ws-ticket", post(ws_ticket))
 
+        // Self-service profile
+        .route("/v1/users/me",               get(me_get).patch(me_update).delete(me_delete))
+        .route("/v1/users/me/password",      post(me_change_password))
+
+        // Service tokens
+        .route("/v1/tokens",                 get(tokens_list).post(tokens_create))
+        .route("/v1/tokens/:id",             delete(token_revoke))
+
         // User management (admin — any active user of the tenant)
         .route("/v1/users/pending",          get(users_list_pending))
         .route("/v1/users/:id/approve",      post(user_approve))
@@ -703,6 +711,170 @@ async fn user_reject(
     client.reject_user(pb::RejectUserRequest {
         context: Some(ctx_from(&claims)),
         user_id: id,
+    }).await.map_err(map_grpc)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// --- Self-service profile ---
+
+#[derive(Serialize)]
+struct UserProfileResp {
+    user_id: String,
+    tenant_id: String,
+    email: String,
+    display_name: String,
+    bio: String,
+    status: String,
+    created_at: Option<String>,
+    last_login_at: Option<String>,
+}
+
+impl From<pb::UserProfile> for UserProfileResp {
+    fn from(p: pb::UserProfile) -> Self {
+        Self {
+            user_id: p.user_id,
+            tenant_id: p.tenant_id,
+            email: p.email,
+            display_name: p.display_name,
+            bio: p.bio,
+            status: p.status,
+            created_at: p.created_at.map(fmt_ts),
+            last_login_at: p.last_login_at.map(fmt_ts),
+        }
+    }
+}
+
+async fn me_get(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<UserProfileResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client.get_me(ctx_from(&claims)).await.map_err(map_grpc)?;
+    Ok(Json(UserProfileResp::from(resp.into_inner())))
+}
+
+#[derive(Deserialize)]
+struct UpdateMeBody {
+    #[serde(default)] display_name: String,
+    #[serde(default)] bio: String,
+    #[serde(default)] email: String,
+}
+
+async fn me_update(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<UpdateMeBody>,
+) -> Result<Json<UserProfileResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client.update_me(pb::UpdateMeRequest {
+        context: Some(ctx_from(&claims)),
+        display_name: body.display_name,
+        bio: body.bio,
+        email: body.email,
+    }).await.map_err(map_grpc)?;
+    Ok(Json(UserProfileResp::from(resp.into_inner())))
+}
+
+#[derive(Deserialize)]
+struct ChangePasswordBody {
+    current_password: String,
+    new_password: String,
+}
+
+async fn me_change_password(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<ChangePasswordBody>,
+) -> Result<StatusCode, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    client.change_password(pb::ChangePasswordRequest {
+        context: Some(ctx_from(&claims)),
+        current_password: body.current_password,
+        new_password: body.new_password,
+    }).await.map_err(map_grpc)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn me_delete(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<StatusCode, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    client.delete_me(ctx_from(&claims)).await.map_err(map_grpc)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// --- Service tokens ---
+
+#[derive(Serialize)]
+struct ServiceTokenCreatedResp {
+    token_id: String,
+    name: String,
+    prefix: String,
+    token: String,
+    created_at: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ServiceTokenDto {
+    token_id: String,
+    name: String,
+    prefix: String,
+    created_at: Option<String>,
+    last_used_at: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ServiceTokensResp { items: Vec<ServiceTokenDto> }
+
+#[derive(Deserialize)]
+struct CreateTokenBody { name: String }
+
+async fn tokens_list(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<ServiceTokensResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client.list_service_tokens(ctx_from(&claims)).await.map_err(map_grpc)?;
+    let items = resp.into_inner().tokens.into_iter().map(|t| ServiceTokenDto {
+        token_id: t.token_id,
+        name: t.name,
+        prefix: t.prefix,
+        created_at: t.created_at.map(fmt_ts),
+        last_used_at: t.last_used_at.map(fmt_ts),
+    }).collect();
+    Ok(Json(ServiceTokensResp { items }))
+}
+
+async fn tokens_create(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<CreateTokenBody>,
+) -> Result<Json<ServiceTokenCreatedResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client.issue_service_token(pb::IssueServiceTokenRequest {
+        context: Some(ctx_from(&claims)),
+        name: body.name,
+    }).await.map_err(map_grpc)?;
+    let r = resp.into_inner();
+    Ok(Json(ServiceTokenCreatedResp {
+        token_id: r.token_id,
+        name: r.name,
+        prefix: r.prefix,
+        token: r.token,
+        created_at: r.created_at.map(fmt_ts),
+    }))
+}
+
+async fn token_revoke(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    client.revoke_service_token(pb::RevokeServiceTokenRequest {
+        context: Some(ctx_from(&claims)),
+        token_id: id,
     }).await.map_err(map_grpc)?;
     Ok(StatusCode::NO_CONTENT)
 }

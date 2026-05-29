@@ -26,6 +26,21 @@ service AuthService {
   // Lookup the JWKS published by this issuer (mirrors /.well-known/jwks.json).
   rpc Jwks (Empty) returns (JwksResponse);
 
+  // ── Self-service profile management ──────────────────────────────────────
+  // Get the caller's own profile (resolved from JWT claims).
+  rpc GetMe (RequestContext) returns (UserProfile);
+  // Update display_name, bio, and email.
+  rpc UpdateMe (UpdateMeRequest) returns (UserProfile);
+  // Change the caller's password; requires the current password.
+  rpc ChangePassword (ChangePasswordRequest) returns (Empty);
+  // Delete the caller's own account. Irreversible.
+  rpc DeleteMe (RequestContext) returns (Empty);
+
+  // ── Service tokens ────────────────────────────────────────────────────────
+  rpc IssueServiceToken (IssueServiceTokenRequest) returns (ServiceTokenCreated);
+  rpc ListServiceTokens (RequestContext) returns (ServiceTokensResponse);
+  rpc RevokeServiceToken (RevokeServiceTokenRequest) returns (Empty);
+
   // Register a new user (closed beta: account starts as 'pending' until approved).
   rpc Register (RegisterRequest) returns (RegisterResponse);
 
@@ -138,4 +153,64 @@ message ApproveUserRequest {
 message RejectUserRequest {
   RequestContext context = 1;
   string user_id        = 2;
+}
+
+// --- User profile ---
+
+message UserProfile {
+  string user_id      = 1;
+  string tenant_id    = 2;
+  string email        = 3;
+  string display_name = 4;
+  string bio          = 5;
+  string status       = 6;
+  google.protobuf.Timestamp created_at    = 7;
+  google.protobuf.Timestamp last_login_at = 8;
+}
+
+message UpdateMeRequest {
+  RequestContext context     = 1;
+  string         display_name = 2;
+  string         bio          = 3;
+  string         email        = 4;
+}
+
+message ChangePasswordRequest {
+  RequestContext context          = 1;
+  string         current_password = 2;
+  string         new_password     = 3;
+}
+
+// --- Service tokens ---
+
+message IssueServiceTokenRequest {
+  RequestContext context = 1;
+  string         name    = 2;
+}
+
+message ServiceTokenCreated {
+  string user_id    = 1;
+  string token_id   = 2;
+  string name       = 3;
+  string prefix     = 4;
+  // Full token — only returned once.
+  string token      = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ServiceTokenDto {
+  string token_id   = 1;
+  string name       = 2;
+  string prefix     = 3;
+  google.protobuf.Timestamp created_at    = 4;
+  google.protobuf.Timestamp last_used_at  = 5;
+}
+
+message ServiceTokensResponse {
+  repeated ServiceTokenDto tokens = 1;
+}
+
+message RevokeServiceTokenRequest {
+  RequestContext context  = 1;
+  string         token_id = 2;
 }

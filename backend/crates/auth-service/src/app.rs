@@ -14,16 +14,17 @@ use sqlx::PgPool;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::adapters::{PgRefreshRepo, PgSessionRepo, PgUserRepo};
+use crate::adapters::{PgRefreshRepo, PgServiceTokenRepo, PgSessionRepo, PgUserRepo};
 use crate::config::AuthConfig;
-use crate::domain::{NewUser, RefreshToken, Session, User, UserStatus};
-use crate::ports::{RefreshRepository, SessionRepository, UserRepository};
+use crate::domain::{NewUser, RefreshToken, ServiceToken, Session, User, UserStatus};
+use crate::ports::{RefreshRepository, ServiceTokenRepository, SessionRepository, UserRepository};
 
 pub struct AuthApp {
     pub cfg: AuthConfig,
     pub users: Arc<dyn UserRepository>,
     pub sessions: Arc<dyn SessionRepository>,
     pub refresh: Arc<dyn RefreshRepository>,
+    pub service_tokens: Arc<dyn ServiceTokenRepository>,
     pub issuer: Issuer,
 }
 
@@ -40,7 +41,8 @@ impl AuthApp {
             cfg,
             users: Arc::new(PgUserRepo { pool: pool.clone() }),
             sessions: Arc::new(PgSessionRepo { pool: pool.clone() }),
-            refresh: Arc::new(PgRefreshRepo { pool }),
+            refresh: Arc::new(PgRefreshRepo { pool: pool.clone() }),
+            service_tokens: Arc::new(PgServiceTokenRepo { pool }),
             issuer,
         })
     }
@@ -180,6 +182,91 @@ impl AuthApp {
             let _ = self.sessions.revoke(row.session_id, "logout").await;
         }
         Ok(())
+    }
+
+    /// Get caller's own profile by user_id.
+    pub async fn get_me(&self, user_id: Uuid) -> Result<User, Error> {
+        self.users.find_by_id(user_id).await
+            .map_err(Error::from)?
+            .ok_or(Error::NotFound("user not found"))
+    }
+
+    /// Update display_name, bio, email.
+    pub async fn update_me(
+        &self,
+        user_id: Uuid,
+        display_name: &str,
+        bio: &str,
+        email: &str,
+    ) -> Result<User, Error> {
+        self.users.update_profile(user_id, display_name, bio, email).await.map_err(Error::from)?;
+        self.users.find_by_id(user_id).await
+            .map_err(Error::from)?
+            .ok_or(Error::NotFound("user not found"))
+    }
+
+    /// Change password — requires current password for verification.
+    pub async fn change_password(
+        &self,
+        user_id: Uuid,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<(), Error> {
+        if new_password.len() < 12 {
+            return Err(Error::BadRequest("password must be at least 12 characters".into()));
+        }
+        let hash_str = self.users.password_hash(user_id).await
+            .map_err(Error::from)?
+            .ok_or(Error::Unauthenticated)?;
+        let parsed = PasswordHash::new(&hash_str).map_err(|_| Error::Internal(anyhow!("bad hash")))?;
+        Argon2::default().verify_password(current_password.as_bytes(), &parsed)
+            .map_err(|_| Error::Unauthenticated)?;
+        let new_hash = hash_password(new_password)
+            .map_err(|e| Error::Internal(anyhow!("hash: {e}")))?;
+        self.users.update_password(user_id, &new_hash).await.map_err(Error::from)
+    }
+
+    /// Delete the caller's own account. Irreversible.
+    pub async fn delete_me(&self, user_id: Uuid) -> Result<(), Error> {
+        self.users.delete(user_id).await.map_err(Error::from)
+    }
+
+    /// Issue a new service token for CI/API use.
+    pub async fn issue_service_token(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        name: &str,
+    ) -> Result<(ServiceToken, String), Error> {
+        let mut raw = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut raw);
+        let full_token = format!("sqt_{}", base64_encode_urlsafe(&raw));
+        let prefix = full_token.chars().take(12).collect::<String>();
+        let token_hash = sha256(full_token.as_bytes());
+
+        let tok = ServiceToken {
+            id: Uuid::from_u128(ulid::Ulid::new().0),
+            tenant_id,
+            created_by: user_id,
+            name: name.to_owned(),
+            token_sha256: token_hash,
+            prefix,
+            created_at: OffsetDateTime::now_utc(),
+            last_used_at: None,
+            revoked_at: None,
+        };
+        self.service_tokens.create(&tok).await.map_err(Error::from)?;
+        Ok((tok, full_token))
+    }
+
+    /// List active (non-revoked) service tokens for a tenant.
+    pub async fn list_service_tokens(&self, tenant_id: Uuid) -> Result<Vec<ServiceToken>, Error> {
+        self.service_tokens.list_active(tenant_id).await.map_err(Error::from)
+    }
+
+    /// Revoke a service token by ID (must belong to tenant).
+    pub async fn revoke_service_token(&self, token_id: Uuid, tenant_id: Uuid) -> Result<(), Error> {
+        self.service_tokens.revoke(token_id, tenant_id).await.map_err(Error::from)
     }
 
     async fn issue_pair(&self, session: Session, user_id: Uuid, scope: &str) -> Result<TokenPair, Error> {

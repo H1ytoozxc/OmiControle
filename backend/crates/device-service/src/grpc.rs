@@ -133,8 +133,31 @@ impl pb::device_service_server::DeviceService for DeviceGrpc {
         Ok(Response::new(pb::ListDevicesResponse { items, next_cursor: String::new() }))
     }
 
-    async fn get_device(&self, _req: Request<pb::GetDeviceRequest>) -> Result<Response<pb::Device>, Status> {
-        Err(Status::unimplemented("todo"))
+    async fn get_device(&self, req: Request<pb::GetDeviceRequest>) -> Result<Response<pb::Device>, Status> {
+        let r = req.into_inner();
+        let id = parse_uuid(&r.device_id).map_err(|_| Status::invalid_argument("bad device_id"))?;
+        let row = sqlx::query_as::<_, DeviceRow>(
+            r#"SELECT id, tenant_id, name, platform, agent_version, status, public_key,
+                      enrolled_at, last_seen_at, labels
+               FROM device.devices WHERE id = $1 AND deleted_at IS NULL"#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool).await
+        .map_err(|e| Status::internal(e.to_string()))?
+        .ok_or_else(|| Status::not_found("device not found"))?;
+
+        Ok(Response::new(pb::Device {
+            id: row.id.to_string(),
+            tenant_id: row.tenant_id.to_string(),
+            name: row.name,
+            platform: row.platform,
+            agent_version: row.agent_version,
+            status: row.status,
+            public_key: row.public_key,
+            enrolled_at: Some(into_pb_ts(row.enrolled_at)),
+            last_seen_at: row.last_seen_at.map(into_pb_ts),
+            labels: serde_json::from_value(row.labels).unwrap_or_default(),
+        }))
     }
 
     async fn delete_device(&self, req: Request<pb::DeleteDeviceRequest>) -> Result<Response<pb::Empty>, Status> {

@@ -1,15 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import * as React from "react";
+import { Plus, RefreshCw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody,
-  Button,
+  Button, Badge,
 } from "@/components/primitives";
 import { useT } from "@/lib/i18n";
+import { api } from "@/lib/api/client";
+
+interface WorkflowInstance {
+  id: string;
+  definition_id: string;
+  status: string;
+}
+
+interface WorkflowListResp {
+  items: WorkflowInstance[];
+  next_cursor?: string;
+}
+
+function statusTone(status: string): "mint" | "ember" | "flame" | "bone" {
+  switch (status.toLowerCase()) {
+    case "running":   return "ember";
+    case "completed": return "mint";
+    case "failed":    return "flame";
+    default:          return "bone";
+  }
+}
 
 export default function WorkflowsPage() {
   const t = useT().workflows;
+
+  const workflowsQuery = useQuery<WorkflowListResp>({
+    queryKey: ["workflows"],
+    queryFn: () => api<WorkflowListResp>("/v1/workflows"),
+    retry: false,
+  });
+
+  const instances = workflowsQuery.data?.items ?? [];
+
   return (
     <div className="space-y-5">
       <header className="flex items-end justify-between gap-6 fade-up">
@@ -29,21 +61,48 @@ export default function WorkflowsPage() {
 
       <Plate className="fade-up" style={{ ["--d" as never]: "80ms" }}>
         <PlateHeader>
-          <PlateTitle label={t.eyebrow} subtle="0" />
+          <PlateTitle
+            label={t.eyebrow}
+            subtle={workflowsQuery.isLoading ? "…" : String(instances.length)}
+          />
+          {workflowsQuery.isError && (
+            <Badge size="xs" tone="bone">service unavailable</Badge>
+          )}
         </PlateHeader>
         <PlateBody>
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-12 h-12 rounded-md bg-ink-100 border border-white/[0.08] grid place-items-center mb-4">
-              <Plus className="w-5 h-5 text-bone-dim" strokeWidth={1.4} />
+          {workflowsQuery.isLoading ? (
+            <div className="flex items-center justify-center py-20 gap-3 text-bone-muted text-[13px]">
+              <RefreshCw className="w-4 h-4 animate-spin" strokeWidth={1.6} />
+              Loading workflows…
             </div>
-            <p className="text-[14px] text-bone mb-1">{t.empty}</p>
-            <p className="text-[12.5px] text-bone-muted max-w-[320px] leading-relaxed mb-5">{t.emptyNote}</p>
-            <Button variant="ember" size="md" asChild>
-              <Link href="/workflows/builder/new">
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />{t.create}
-              </Link>
-            </Button>
-          </div>
+          ) : instances.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-12 h-12 rounded-md bg-ink-100 border border-white/[0.08] grid place-items-center mb-4">
+                <Plus className="w-5 h-5 text-bone-dim" strokeWidth={1.4} />
+              </div>
+              <p className="text-[14px] text-bone mb-1">{t.empty}</p>
+              <p className="text-[12.5px] text-bone-muted max-w-[320px] leading-relaxed mb-5">{t.emptyNote}</p>
+              <Button variant="ember" size="md" asChild>
+                <Link href="/workflows/builder/new">
+                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />{t.create}
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/[0.04]">
+              {instances.map((wf) => (
+                <div key={wf.id} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] text-bone font-mono truncate">{wf.id}</p>
+                    <p className="text-[11px] font-mono text-bone-dim mt-0.5 truncate">
+                      definition: {wf.definition_id}
+                    </p>
+                  </div>
+                  <Badge size="xs" tone={statusTone(wf.status)}>{wf.status}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
         </PlateBody>
       </Plate>
     </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Cpu, Bot, Workflow, Terminal, Plus, ArrowRight } from "lucide-react";
 import {
@@ -47,11 +48,15 @@ export default function DashboardPage() {
           {t.subtitle}
         </p>
         <div className="flex gap-2 mt-5">
-          <Button variant="ember" size="lg">
-            <Plus className="w-4 h-4" strokeWidth={1.8} />{t.enrollDevice}
+          <Button variant="ember" size="lg" asChild>
+            <Link href="/devices">
+              <Plus className="w-4 h-4" strokeWidth={1.8} />{t.enrollDevice}
+            </Link>
           </Button>
-          <Button variant="outline" size="lg">
-            <Bot className="w-4 h-4" strokeWidth={1.8} />{t.launchAgent}
+          <Button variant="outline" size="lg" asChild>
+            <Link href="/ai">
+              <Bot className="w-4 h-4" strokeWidth={1.8} />{t.launchAgent}
+            </Link>
           </Button>
         </div>
       </section>

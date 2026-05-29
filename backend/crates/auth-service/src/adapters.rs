@@ -15,6 +15,7 @@ struct UserRow {
     tenant_id: Uuid,
     email: String,
     display_name: Option<String>,
+    bio: Option<String>,
     status: String,
     mfa_enabled: bool,
     created_at: OffsetDateTime,
@@ -42,7 +43,7 @@ pub struct PgUserRepo { pub pool: PgPool }
 impl UserRepository for PgUserRepo {
     async fn find_by_email(&self, tenant_id: Uuid, email: &str) -> anyhow::Result<Option<User>> {
         let row = sqlx::query_as::<_, UserRow>(
-            r#"SELECT id, tenant_id, email, display_name, status, mfa_enabled, created_at, last_login_at
+            r#"SELECT id, tenant_id, email, display_name, bio, status, mfa_enabled, created_at, last_login_at
                FROM auth.users WHERE tenant_id = $1 AND email = $2"#,
         )
         .bind(tenant_id)
@@ -53,7 +54,7 @@ impl UserRepository for PgUserRepo {
 
     async fn find_by_id(&self, id: Uuid) -> anyhow::Result<Option<User>> {
         let row = sqlx::query_as::<_, UserRow>(
-            r#"SELECT id, tenant_id, email, display_name, status, mfa_enabled, created_at, last_login_at
+            r#"SELECT id, tenant_id, email, display_name, bio, status, mfa_enabled, created_at, last_login_at
                FROM auth.users WHERE id = $1"#,
         )
         .bind(id)
@@ -102,7 +103,7 @@ impl UserRepository for PgUserRepo {
 
     async fn list_pending(&self, tenant_id: Uuid) -> anyhow::Result<Vec<User>> {
         let rows = sqlx::query_as::<_, UserRow>(
-            r#"SELECT id, tenant_id, email, display_name, status, mfa_enabled, created_at, last_login_at
+            r#"SELECT id, tenant_id, email, display_name, bio, status, mfa_enabled, created_at, last_login_at
                FROM auth.users WHERE tenant_id = $1 AND status = 'pending'
                ORDER BY created_at DESC"#,
         )
@@ -117,6 +118,102 @@ impl UserRepository for PgUserRepo {
             .execute(&self.pool).await?;
         Ok(())
     }
+
+    async fn update_profile(&self, id: Uuid, display_name: &str, bio: &str, email: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE auth.users SET display_name=$1, bio=$2, email=$3, updated_at=now() WHERE id=$4",
+        )
+        .bind(display_name)
+        .bind(bio)
+        .bind(email)
+        .bind(id)
+        .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn update_password(&self, id: Uuid, hash: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE auth.users SET password_hash=$1, updated_at=now() WHERE id=$2",
+        )
+        .bind(hash)
+        .bind(id)
+        .execute(&self.pool).await?;
+        Ok(())
+    }
+}
+
+// ── Service tokens ────────────────────────────────────────────────────────────
+
+#[derive(sqlx::FromRow)]
+struct ServiceTokenRow {
+    id: Uuid,
+    tenant_id: Uuid,
+    created_by: Uuid,
+    name: String,
+    token_sha256: Vec<u8>,
+    prefix: String,
+    created_at: OffsetDateTime,
+    last_used_at: Option<OffsetDateTime>,
+    revoked_at: Option<OffsetDateTime>,
+}
+
+pub struct PgServiceTokenRepo { pub pool: PgPool }
+
+#[async_trait]
+impl ServiceTokenRepository for PgServiceTokenRepo {
+    async fn create(&self, tok: &ServiceToken) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"INSERT INTO auth.service_tokens
+               (id, tenant_id, created_by, name, token_sha256, prefix, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
+        )
+        .bind(tok.id)
+        .bind(tok.tenant_id)
+        .bind(tok.created_by)
+        .bind(&tok.name)
+        .bind(&tok.token_sha256[..])
+        .bind(&tok.prefix)
+        .bind(tok.created_at)
+        .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn list_active(&self, tenant_id: Uuid) -> anyhow::Result<Vec<ServiceToken>> {
+        let rows = sqlx::query_as::<_, ServiceTokenRow>(
+            r#"SELECT id, tenant_id, created_by, name, token_sha256, prefix,
+                      created_at, last_used_at, revoked_at
+               FROM auth.service_tokens
+               WHERE tenant_id = $1 AND revoked_at IS NULL
+               ORDER BY created_at DESC"#,
+        )
+        .bind(tenant_id)
+        .fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|r| {
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&r.token_sha256);
+            ServiceToken {
+                id: r.id,
+                tenant_id: r.tenant_id,
+                created_by: r.created_by,
+                name: r.name,
+                token_sha256: hash,
+                prefix: r.prefix,
+                created_at: r.created_at,
+                last_used_at: r.last_used_at,
+                revoked_at: r.revoked_at,
+            }
+        }).collect())
+    }
+
+    async fn revoke(&self, id: Uuid, tenant_id: Uuid) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE auth.service_tokens SET revoked_at=now() WHERE id=$1 AND tenant_id=$2 AND revoked_at IS NULL",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&self.pool).await?;
+        Ok(())
+    }
 }
 
 fn to_user(r: UserRow) -> User {
@@ -125,6 +222,7 @@ fn to_user(r: UserRow) -> User {
         tenant_id: r.tenant_id,
         email: r.email,
         display_name: r.display_name,
+        bio: r.bio,
         status: parse_status(&r.status),
         mfa_enabled: r.mfa_enabled,
         created_at: r.created_at,

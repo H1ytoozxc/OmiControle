@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Camera, Check, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Camera, Eye, EyeOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody, PlateFooter,
   Button, Badge,
@@ -11,14 +12,27 @@ import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/auth/session";
 import { api } from "@/lib/api/client";
 
+interface UserProfile {
+  user_id: string;
+  tenant_id: string;
+  email: string;
+  display_name: string;
+  bio: string;
+  status: string;
+  created_at?: string;
+  last_login_at?: string;
+}
+
 export default function ProfilePage() {
   const t = useT().profile;
-  const { tenantId } = useSession();
+  const { tenantId, clearSession } = useSession();
+  const router = useRouter();
 
   const [avatar, setAvatar] = React.useState<string | null>(null);
   const [displayName, setDisplayName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [bio, setBio] = React.useState("");
+  const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [showCurrent, setShowCurrent] = React.useState(false);
   const [showNew, setShowNew] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -27,6 +41,15 @@ export default function ProfilePage() {
   const [newPw, setNewPw] = React.useState("");
   const [confirmPw, setConfirmPw] = React.useState("");
   const fileRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    api<UserProfile>("/v1/users/me").then((p) => {
+      setProfile(p);
+      setDisplayName(p.display_name);
+      setEmail(p.email);
+      setBio(p.bio);
+    }).catch(() => {});
+  }, []);
 
   function pickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -38,13 +61,15 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api("/v1/users/me", {
+      const updated = await api<UserProfile>("/v1/users/me", {
         method: "PATCH",
         body: { display_name: displayName, email, bio },
       });
+      setProfile(updated);
       toast.success("Profile saved");
-    } catch {
-      toast.error("Profile endpoint not yet available — changes saved locally");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save profile";
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -68,10 +93,23 @@ export default function ProfilePage() {
       });
       toast.success("Password updated");
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    } catch {
-      toast.error("Password change endpoint not yet available");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to change password";
+      toast.error(msg);
     } finally {
       setSavingPw(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!confirm("Delete your account? This is irreversible.")) return;
+    try {
+      await api("/v1/users/me", { method: "DELETE" });
+      clearSession();
+      router.push("/login");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to delete account";
+      toast.error(msg);
     }
   }
 
@@ -223,10 +261,14 @@ export default function ProfilePage() {
         <PlateBody className="space-y-3 text-[12.5px]">
           <Row label={t.accountType}><span className="font-mono text-bone-muted">local · v0.1</span></Row>
           <Row label={t.tenant}>
-            <span className="font-mono text-bone-muted">{tenantId ?? "—"}</span>
+            <span className="font-mono text-bone-muted">{profile?.tenant_id ?? tenantId ?? "—"}</span>
           </Row>
           <Row label={t.region}><span className="font-mono text-bone-muted">local</span></Row>
-          <Row label={t.joined}><span className="font-mono text-bone-muted">—</span></Row>
+          <Row label={t.joined}>
+            <span className="font-mono text-bone-muted">
+              {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"}
+            </span>
+          </Row>
         </PlateBody>
       </Plate>
 
@@ -244,7 +286,7 @@ export default function ProfilePage() {
             variant="outline"
             size="sm"
             className="border-flame/40 text-flame hover:bg-flame/[0.08] hover:border-flame/60"
-            onClick={() => toast.error("Account deletion not yet available")}
+            onClick={deleteAccount}
           >
             {t.deleteAccount}
           </Button>
