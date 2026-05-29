@@ -53,6 +53,15 @@ impl pb::auth_service_server::AuthService for AuthGrpc {
         }))
     }
 
+    async fn logout(
+        &self,
+        req: Request<pb::LogoutRequest>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let r = req.into_inner();
+        self.app.logout(&r.refresh_token).await.map_err(map_err)?;
+        Ok(Response::new(pb::Empty {}))
+    }
+
     async fn verify(
         &self,
         _req: Request<pb::VerifyRequest>,

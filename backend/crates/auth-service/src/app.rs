@@ -104,6 +104,19 @@ impl AuthApp {
         self.issue_pair(session, Uuid::nil(), "role:user").await
     }
 
+    /// Revoke a refresh token's entire family and its session.
+    ///
+    /// Idempotent: an unknown or already-revoked token still returns Ok so
+    /// callers can't enumerate live tokens by observing the response.
+    pub async fn logout(&self, refresh_token: &str) -> Result<(), Error> {
+        let hash = sha256(refresh_token.as_bytes());
+        if let Some(row) = self.refresh.find_by_hash(&hash).await.map_err(Error::from)? {
+            let _ = self.refresh.revoke_family(row.session_id, "logout").await;
+            let _ = self.sessions.revoke(row.session_id, "logout").await;
+        }
+        Ok(())
+    }
+
     async fn issue_pair(&self, session: Session, user_id: Uuid, scope: &str) -> Result<TokenPair, Error> {
         let (access_token, _) = self.issuer.issue(IssueParams {
             kid: self.cfg.jwt.signing_keys.iter().find(|k| k.active).map(|k| k.kid.as_str()).unwrap_or(""),

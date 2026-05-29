@@ -38,8 +38,20 @@ export function Topbar() {
     return () => document.removeEventListener("mousedown", handle);
   }, [menuOpen]);
 
-  function signOut() {
+  async function signOut() {
     setMenuOpen(false);
+    // Best-effort server-side revocation; we still navigate to /login even if
+    // the call fails, since the local session is gone either way.
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+    } catch {
+      // ignored — UI flow continues
+    }
     router.push("/login");
   }
 

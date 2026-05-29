@@ -9,6 +9,9 @@ use governor::{
 };
 use sequoia_auth::jwks::JwksCache;
 use sequoia_auth::Verifier;
+use sequoia_proto::sequoia::v1::auth_service_client::AuthServiceClient;
+use sequoia_proto::sequoia::v1::device_service_client::DeviceServiceClient;
+use tonic::transport::Channel;
 
 use crate::config::GatewayConfig;
 
@@ -26,6 +29,14 @@ pub struct AppState {
 
     /// Decoded HMAC key for issuing WebSocket tickets. `None` disables issuance.
     pub ws_ticket_key: Option<Vec<u8>>,
+
+    /// gRPC client for device-service. Connected lazily so the gateway starts
+    /// even if the downstream is briefly unavailable; calls return Unavailable
+    /// until the channel reconnects.
+    pub device_client: Option<DeviceServiceClient<Channel>>,
+
+    /// gRPC client for auth-service. Same lazy-connect rationale as device.
+    pub auth_client: Option<AuthServiceClient<Channel>>,
 }
 
 impl AppState {
@@ -54,12 +65,41 @@ impl AppState {
                 .context("ws_ticket_hmac_key_b64 must be base64url-encoded and ≥ 32 bytes")?)
         };
 
+        let device_client = build_grpc_client::<DeviceServiceClient<Channel>>(
+            "device-service",
+            &cfg.upstreams.device,
+            DeviceServiceClient::new,
+        )?;
+        let auth_client = build_grpc_client::<AuthServiceClient<Channel>>(
+            "auth-service",
+            &cfg.upstreams.auth,
+            AuthServiceClient::new,
+        )?;
+
         Ok(Self {
             cfg: cfg.clone(),
             jwt_verifier,
             ip_limiter,
             global_limiter,
             ws_ticket_key,
+            device_client,
+            auth_client,
         })
     }
+}
+
+fn build_grpc_client<C>(
+    name: &'static str,
+    upstream: &str,
+    ctor: impl FnOnce(Channel) -> C,
+) -> anyhow::Result<Option<C>> {
+    if upstream.is_empty() {
+        tracing::warn!(service = name, "upstream not configured; routes will return 503");
+        return Ok(None);
+    }
+    let endpoint = tonic::transport::Endpoint::from_shared(upstream.to_owned())
+        .with_context(|| format!("upstream URI invalid for {name}"))?
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15));
+    Ok(Some(ctor(endpoint.connect_lazy())))
 }

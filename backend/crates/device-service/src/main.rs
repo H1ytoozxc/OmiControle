@@ -11,7 +11,8 @@ mod config;
 mod registry;
 mod grpc;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
+use sequoia_auth::Issuer;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
@@ -39,10 +40,16 @@ async fn main() -> anyhow::Result<()> {
     let pool = sequoia_db::init_pool(&cfg.database).await?;
     let registry = Arc::new(ChannelRegistry::default());
 
+    let device_jwt_pem = sequoia_config::resolve_secret(&cfg.device_jwt.private_key_pem)
+        .context("resolve device_jwt.private_key_pem")?;
+    let jwt_issuer = Issuer::from_es256_pem(cfg.device_jwt.kid.clone(), device_jwt_pem.as_bytes())
+        .map_err(|e| anyhow!("device jwt issuer: {e}"))?;
+
     let svc = grpc::DeviceGrpc {
         pool,
         registry: registry.clone(),
         cfg: Arc::new(cfg.clone()),
+        jwt_issuer,
     };
 
     let addr: SocketAddr = cfg.grpc_bind.parse().context("bind")?;

@@ -14,9 +14,25 @@ pub struct DeviceConfig {
     /// Channel capacity per device — slow agents are dropped instead of
     /// memory-bloating the server.
     #[serde(default = "default_chan_cap")]   pub channel_capacity: usize,
+
+    /// Device-JWT signing config. Keeps device tokens cryptographically
+    /// separate from user tokens (different signing key, different audience).
+    pub device_jwt: DeviceJwtConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DeviceJwtConfig {
+    pub issuer: String,
+    pub audience: String,
+    pub kid: String,
+    /// `file://path` or `env://VAR` — resolved via sequoia_config::resolve_secret.
+    pub private_key_pem: String,
+    #[serde(default = "default_device_jwt_ttl")]
+    pub ttl_s: i64,
 }
 
 fn default_bind() -> String { "0.0.0.0:9082".into() }
 fn default_log_filter() -> String { "info".into() }
 fn default_enroll_ttl() -> i64 { 600 }
 fn default_chan_cap() -> usize { 256 }
+fn default_device_jwt_ttl() -> i64 { 24 * 3600 }

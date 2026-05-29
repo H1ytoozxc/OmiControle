@@ -4192,6 +4192,7 @@ dependencies = [
  "moka",
  "parking_lot",
  "prost",
+ "prost-types",
  "sequoia-auth",
  "sequoia-common",
  "sequoia-config",

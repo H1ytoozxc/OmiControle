@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use futures::Stream;
 use rand::Rng;
+use sequoia_auth::{IssueParams, Issuer};
 use sequoia_proto::sequoia::v1 as pb;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -49,6 +50,8 @@ pub struct DeviceGrpc {
     pub pool: PgPool,
     pub registry: RegistryRef,
     pub cfg: Arc<DeviceConfig>,
+    /// ES256 issuer for device JWTs (separate trust domain from user tokens).
+    pub jwt_issuer: Issuer,
 }
 
 type SrvStream =
@@ -173,12 +176,28 @@ impl pb::device_service_server::DeviceService for DeviceGrpc {
         tx.commit().await.map_err(|e| Status::internal(e.to_string()))?;
 
         info!(device=%device_id, "device enrolled");
+
+        // Issue the device JWT — the agent will present this on `Channel`
+        // and any future device-authenticated RPCs. Different `aud` from
+        // the user-token audience prevents cross-domain reuse.
+        let (device_jwt, _claims) = self.jwt_issuer.issue(IssueParams {
+            kid: &self.cfg.device_jwt.kid,
+            key_pem: &[],
+            issuer: &self.cfg.device_jwt.issuer,
+            audience: &self.cfg.device_jwt.audience,
+            subject: &device_id.to_string(),
+            tenant: &row.tenant_id.to_string(),
+            kind: "device",
+            scope: "device:channel",
+            ttl_secs: self.cfg.device_jwt.ttl_s,
+        }).map_err(|e| Status::internal(format!("device jwt: {e}")))?;
+
         Ok(Response::new(pb::EnrollResponse {
             device_id: device_id.to_string(),
             tenant_id: row.tenant_id.to_string(),
             device_certificate: Vec::new(),    // TODO: per-tenant CA sign
-            device_jwt: String::new(),          // TODO: issue device JWT via auth-service
-            device_jwt_ttl_s: 24 * 3600,
+            device_jwt,
+            device_jwt_ttl_s: self.cfg.device_jwt.ttl_s as u32,
             trust_anchor_cert: Vec::new(),
         }))
     }

@@ -20,6 +20,9 @@ const PUBLIC_PREFIXES: &[&str] = &[
     "/auth/oidc/",
     "/v1/auth/login",
     "/v1/auth/refresh",
+    // Logout authenticates via possession of the refresh_token in the body —
+    // requiring a valid access token would prevent logout after expiry.
+    "/v1/auth/logout",
 ];
 
 pub async fn auth_layer(

@@ -11,6 +11,10 @@ service AuthService {
   // Rotate a refresh token. The previous token is invalidated atomically.
   rpc Refresh (RefreshRequest) returns (TokenPair);
 
+  // Revoke the entire refresh-token family + session. Idempotent: an unknown
+  // or already-revoked token returns OK to avoid leaking existence.
+  rpc Logout (LogoutRequest) returns (Empty);
+
   // Verify an access token. Used by internal services when they cannot rely
   // on the gateway having verified upstream (e.g. server-initiated calls).
   rpc Verify (VerifyRequest) returns (VerifyResponse);
@@ -50,6 +54,11 @@ message TokenPair {
 }
 
 message RefreshRequest {
+  RequestContext context       = 1;
+  string         refresh_token = 2;
+}
+
+message LogoutRequest {
   RequestContext context       = 1;
   string         refresh_token = 2;
 }
