@@ -48,14 +48,7 @@ impl UserRepository for PgUserRepo {
         .bind(tenant_id)
         .bind(email)
         .fetch_optional(&self.pool).await?;
-        Ok(row.map(|r| User {
-            id: r.id, tenant_id: r.tenant_id, email: r.email,
-            display_name: r.display_name,
-            status: parse_status(&r.status),
-            mfa_enabled: r.mfa_enabled,
-            created_at: r.created_at,
-            last_login_at: r.last_login_at,
-        }))
+        Ok(row.map(|r| to_user(r)))
     }
 
     async fn find_by_id(&self, id: Uuid) -> anyhow::Result<Option<User>> {
@@ -65,14 +58,7 @@ impl UserRepository for PgUserRepo {
         )
         .bind(id)
         .fetch_optional(&self.pool).await?;
-        Ok(row.map(|r| User {
-            id: r.id, tenant_id: r.tenant_id, email: r.email,
-            display_name: r.display_name,
-            status: parse_status(&r.status),
-            mfa_enabled: r.mfa_enabled,
-            created_at: r.created_at,
-            last_login_at: r.last_login_at,
-        }))
+        Ok(row.map(|r| to_user(r)))
     }
 
     async fn touch_login(&self, id: Uuid) -> anyhow::Result<()> {
@@ -93,15 +79,75 @@ impl UserRepository for PgUserRepo {
 
     async fn update_status(&self, id: Uuid, status: UserStatus) -> anyhow::Result<()> {
         sqlx::query("UPDATE auth.users SET status = $1 WHERE id = $2")
-            .bind(format!("{:?}", status).to_lowercase())
+            .bind(status_str(status))
+            .bind(id)
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn create(&self, user: &NewUser) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"INSERT INTO auth.users
+               (id, tenant_id, email, display_name, password_hash, status, mfa_enabled, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,'pending',false,now(),now())"#,
+        )
+        .bind(user.id)
+        .bind(user.tenant_id)
+        .bind(&user.email)
+        .bind(&user.display_name)
+        .bind(&user.password_hash)
+        .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn list_pending(&self, tenant_id: Uuid) -> anyhow::Result<Vec<User>> {
+        let rows = sqlx::query_as::<_, UserRow>(
+            r#"SELECT id, tenant_id, email, display_name, status, mfa_enabled, created_at, last_login_at
+               FROM auth.users WHERE tenant_id = $1 AND status = 'pending'
+               ORDER BY created_at DESC"#,
+        )
+        .bind(tenant_id)
+        .fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(to_user).collect())
+    }
+
+    async fn delete(&self, id: Uuid) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM auth.users WHERE id = $1")
             .bind(id)
             .execute(&self.pool).await?;
         Ok(())
     }
 }
 
+fn to_user(r: UserRow) -> User {
+    User {
+        id: r.id,
+        tenant_id: r.tenant_id,
+        email: r.email,
+        display_name: r.display_name,
+        status: parse_status(&r.status),
+        mfa_enabled: r.mfa_enabled,
+        created_at: r.created_at,
+        last_login_at: r.last_login_at,
+    }
+}
+
 fn parse_status(s: &str) -> UserStatus {
-    match s { "active" => UserStatus::Active, "disabled" => UserStatus::Disabled, _ => UserStatus::Locked }
+    match s {
+        "active"  => UserStatus::Active,
+        "disabled"=> UserStatus::Disabled,
+        "pending" => UserStatus::Pending,
+        _         => UserStatus::Locked,
+    }
+}
+
+fn status_str(s: UserStatus) -> &'static str {
+    match s {
+        UserStatus::Active   => "active",
+        UserStatus::Disabled => "disabled",
+        UserStatus::Locked   => "locked",
+        UserStatus::Pending  => "pending",
+    }
 }
 
 pub struct PgSessionRepo { pub pool: PgPool }
@@ -189,6 +235,3 @@ impl RefreshRepository for PgRefreshRepo {
         Ok(())
     }
 }
-
-#[allow(dead_code)]
-fn _now() -> OffsetDateTime { OffsetDateTime::now_utc() }

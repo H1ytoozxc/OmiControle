@@ -79,7 +79,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/auth/login",     post(auth_login))
         .route("/v1/auth/refresh",   post(auth_refresh))
         .route("/v1/auth/logout",    post(auth_logout))
+        .route("/v1/auth/register",  post(auth_register))
         .route("/v1/auth/ws-ticket", post(ws_ticket))
+
+        // User management (admin — any active user of the tenant)
+        .route("/v1/users/pending",          get(users_list_pending))
+        .route("/v1/users/:id/approve",      post(user_approve))
+        .route("/v1/users/:id/reject",       post(user_reject))
 
         // Devices
         .route("/v1/devices",                get(devices_list))
@@ -248,6 +254,41 @@ async fn ws_ticket(
         ticket,
         expires_in_s: s.cfg.ws_ticket_ttl_s,
     }))
+}
+
+// --- Registration ---
+
+#[derive(Deserialize)]
+struct RegisterBody {
+    tenant_id: String,
+    email: String,
+    password: String,
+    #[serde(default)]
+    display_name: String,
+}
+
+#[derive(Serialize)]
+struct RegisterResp {
+    user_id: String,
+    status: String,
+}
+
+async fn auth_register(
+    State(s): State<Arc<AppState>>,
+    Json(body): Json<RegisterBody>,
+) -> Result<Json<RegisterResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client
+        .register(pb::RegisterRequest {
+            tenant_id: body.tenant_id,
+            email: body.email,
+            password: body.password,
+            display_name: body.display_name,
+        })
+        .await
+        .map_err(map_grpc)?;
+    let r = resp.into_inner();
+    Ok(Json(RegisterResp { user_id: r.user_id, status: r.status }))
 }
 
 // --- Devices ---
@@ -605,6 +646,65 @@ async fn notif_channels(
         items: inner.items.into_iter().map(|c| ChannelDto { id: c.id, kind: c.kind, enabled: c.enabled }).collect(),
         next_cursor: if inner.next_cursor.is_empty() { None } else { Some(inner.next_cursor) },
     }))
+}
+
+// --- User management (pending approvals) ---
+
+#[derive(Serialize)]
+struct PendingUserDto {
+    id: String,
+    email: String,
+    display_name: String,
+    registered_at: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PendingUsersResp { items: Vec<PendingUserDto> }
+
+async fn users_list_pending(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<PendingUsersResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client
+        .list_pending_users(pb::ListPendingUsersRequest {
+            context: Some(ctx_from(&claims)),
+        })
+        .await
+        .map_err(map_grpc)?;
+    let items = resp.into_inner().users.into_iter().map(|u| PendingUserDto {
+        id: u.user_id,
+        email: u.email,
+        display_name: u.display_name,
+        registered_at: u.registered_at.map(fmt_ts),
+    }).collect();
+    Ok(Json(PendingUsersResp { items }))
+}
+
+async fn user_approve(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    client.approve_user(pb::ApproveUserRequest {
+        context: Some(ctx_from(&claims)),
+        user_id: id,
+    }).await.map_err(map_grpc)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn user_reject(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    client.reject_user(pb::RejectUserRequest {
+        context: Some(ctx_from(&claims)),
+        user_id: id,
+    }).await.map_err(map_grpc)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // --- Dashboard overview ---

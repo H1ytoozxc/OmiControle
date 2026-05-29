@@ -25,6 +25,18 @@ service AuthService {
 
   // Lookup the JWKS published by this issuer (mirrors /.well-known/jwks.json).
   rpc Jwks (Empty) returns (JwksResponse);
+
+  // Register a new user (closed beta: account starts as 'pending' until approved).
+  rpc Register (RegisterRequest) returns (RegisterResponse);
+
+  // List users in 'pending' state for a tenant (admin only).
+  rpc ListPendingUsers (ListPendingUsersRequest) returns (ListPendingUsersResponse);
+
+  // Approve a pending user — sets status to 'active'.
+  rpc ApproveUser (ApproveUserRequest) returns (Empty);
+
+  // Reject and delete a pending user.
+  rpc RejectUser (RejectUserRequest) returns (Empty);
 }
 
 message IssueTokensRequest {
@@ -83,4 +95,47 @@ message WsTicket {
 
 message JwksResponse {
   string keys_json = 1;  // verbatim JSON for cache-friendly serving
+}
+
+// --- Registration ---
+
+message RegisterRequest {
+  // Tenant the user wants to join. Must already exist.
+  string tenant_id    = 1;
+  string email        = 2;
+  string password     = 3;
+  string display_name = 4;
+}
+
+message RegisterResponse {
+  string user_id = 1;
+  // Always "pending_approval" for now.
+  string status  = 2;
+}
+
+// --- Pending user management (admin) ---
+
+message ListPendingUsersRequest {
+  RequestContext context = 1;
+}
+
+message PendingUser {
+  string user_id      = 1;
+  string email        = 2;
+  string display_name = 3;
+  google.protobuf.Timestamp registered_at = 4;
+}
+
+message ListPendingUsersResponse {
+  repeated PendingUser users = 1;
+}
+
+message ApproveUserRequest {
+  RequestContext context = 1;
+  string user_id        = 2;
+}
+
+message RejectUserRequest {
+  RequestContext context = 1;
+  string user_id        = 2;
 }

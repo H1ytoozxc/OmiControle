@@ -39,7 +39,9 @@ impl Default for LoadOptions {
     fn default() -> Self {
         Self {
             env_prefix: "SEQUOIA",
-            config_dir: PathBuf::from("./config"),
+            config_dir: std::env::var("SEQUOIA_CONFIG_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("./config")),
             env: std::env::var("SEQUOIA_ENV").unwrap_or_else(|_| "development".into()),
         }
     }

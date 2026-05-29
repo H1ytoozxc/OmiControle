@@ -4,6 +4,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RealtimeClient } from "./client";
 import { useRealtime } from "@/lib/store/realtime";
+import { api } from "@/lib/api/client";
 import type { Envelope, DeviceTelemetry } from "@/types/events";
 
 /**
@@ -23,18 +24,11 @@ export function RealtimeBoundary({ children }: { children: React.ReactNode }) {
     const client = new RealtimeClient({
       url,
       fetchTicket: async () => {
-        // POST /v1/auth/ws-ticket — exchange the access cookie for a short-lived
-        // HMAC ticket. Any failure propagates so the realtime client surfaces a
-        // proper disconnected state instead of silently masquerading as authed.
-        const r = await fetch("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
-        if (!r.ok) {
-          throw new Error(`ws-ticket: ${r.status} ${r.statusText}`);
-        }
-        const j = await r.json();
-        if (typeof j.ticket !== "string" || !j.ticket) {
-          throw new Error("ws-ticket: malformed response");
-        }
-        return j.ticket;
+        const { ticket } = await api<{ ticket: string; expires_in_s: number }>(
+          "/v1/auth/ws-ticket",
+          { method: "POST" }
+        );
+        return ticket;
       },
       onStatus: (s) => setStatus(s),
     });

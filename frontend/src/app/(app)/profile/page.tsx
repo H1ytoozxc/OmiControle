@@ -2,14 +2,18 @@
 
 import * as React from "react";
 import { Camera, Check, Eye, EyeOff, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody, PlateFooter,
   Button, Badge,
 } from "@/components/primitives";
 import { useT } from "@/lib/i18n";
+import { useSession } from "@/lib/auth/session";
+import { api } from "@/lib/api/client";
 
 export default function ProfilePage() {
   const t = useT().profile;
+  const { tenantId } = useSession();
 
   const [avatar, setAvatar] = React.useState<string | null>(null);
   const [displayName, setDisplayName] = React.useState("");
@@ -17,27 +21,58 @@ export default function ProfilePage() {
   const [bio, setBio] = React.useState("");
   const [showCurrent, setShowCurrent] = React.useState(false);
   const [showNew, setShowNew] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
-  const [pwSaved, setPwSaved] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [savingPw, setSavingPw] = React.useState(false);
+  const [currentPw, setCurrentPw] = React.useState("");
+  const [newPw, setNewPw] = React.useState("");
+  const [confirmPw, setConfirmPw] = React.useState("");
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   function pickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setAvatar(url);
+    setAvatar(URL.createObjectURL(file));
   }
 
-  function saveProfile(e: React.FormEvent) {
+  async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSaving(true);
+    try {
+      await api("/v1/users/me", {
+        method: "PATCH",
+        body: { display_name: displayName, email, bio },
+      });
+      toast.success("Profile saved");
+    } catch {
+      toast.error("Profile endpoint not yet available — changes saved locally");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function savePassword(e: React.FormEvent) {
+  async function savePassword(e: React.FormEvent) {
     e.preventDefault();
-    setPwSaved(true);
-    setTimeout(() => setPwSaved(false), 2500);
+    if (newPw !== confirmPw) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    if (newPw.length < 12) {
+      toast.error("Password must be at least 12 characters");
+      return;
+    }
+    setSavingPw(true);
+    try {
+      await api("/v1/users/me/password", {
+        method: "POST",
+        body: { current_password: currentPw, new_password: newPw },
+      });
+      toast.success("Password updated");
+      setCurrentPw(""); setNewPw(""); setConfirmPw("");
+    } catch {
+      toast.error("Password change endpoint not yet available");
+    } finally {
+      setSavingPw(false);
+    }
   }
 
   const initials = displayName
@@ -59,7 +94,6 @@ export default function ProfilePage() {
         </PlateHeader>
         <form onSubmit={saveProfile}>
           <PlateBody className="space-y-6">
-            {/* avatar picker */}
             <div className="flex items-center gap-5">
               <div className="relative group">
                 <div className="w-16 h-16 rounded-full bg-ink-200 border border-white/[0.12] grid place-items-center overflow-hidden">
@@ -76,13 +110,7 @@ export default function ProfilePage() {
                 >
                   <Camera className="w-4 h-4 text-bone" strokeWidth={1.6} />
                 </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={pickAvatar}
-                />
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickAvatar} />
               </div>
               <div className="space-y-1.5">
                 <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
@@ -95,15 +123,13 @@ export default function ProfilePage() {
                     onClick={() => { setAvatar(null); if (fileRef.current) fileRef.current.value = ""; }}
                     className="flex items-center gap-1.5 text-[11.5px] font-mono text-flame hover:text-flame/80 transition-colors"
                   >
-                    <Trash2 className="w-3 h-3" strokeWidth={1.6} />
-                    {t.removeAvatar}
+                    <Trash2 className="w-3 h-3" strokeWidth={1.6} />{t.removeAvatar}
                   </button>
                 )}
                 <p className="text-[11px] font-mono text-bone-dim">{t.avatarHint}</p>
               </div>
             </div>
 
-            {/* fields */}
             <div className="grid grid-cols-2 gap-4">
               <Field label={t.displayName}>
                 <input
@@ -135,11 +161,10 @@ export default function ProfilePage() {
               />
             </Field>
           </PlateBody>
-          <PlateFooter className="flex items-center justify-between">
-            <span className={`text-[12px] font-mono transition-opacity duration-300 ${saved ? "text-mint opacity-100" : "opacity-0"}`}>
-              <Check className="w-3 h-3 inline mr-1" strokeWidth={2.5} />{t.saved}
-            </span>
-            <Button type="submit" variant="ember" size="sm">{t.saveChanges}</Button>
+          <PlateFooter className="flex items-center justify-end">
+            <Button type="submit" variant="ember" size="sm" disabled={saving}>
+              {saving ? <><span className="w-3 h-3 border border-ink-50/40 border-t-ink-50 rounded-full animate-spin" />&nbsp;Saving…</> : t.saveChanges}
+            </Button>
           </PlateFooter>
         </form>
       </Plate>
@@ -152,22 +177,39 @@ export default function ProfilePage() {
         <form onSubmit={savePassword}>
           <PlateBody className="space-y-4">
             <Field label={t.currentPassword}>
-              <PasswordInput show={showCurrent} onToggle={() => setShowCurrent((v) => !v)} autoComplete="current-password" />
+              <PasswordInput
+                value={currentPw}
+                onChange={setCurrentPw}
+                show={showCurrent}
+                onToggle={() => setShowCurrent((v) => !v)}
+                autoComplete="current-password"
+              />
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label={t.newPassword} hint={t.passwordHint}>
-                <PasswordInput show={showNew} onToggle={() => setShowNew((v) => !v)} autoComplete="new-password" />
+                <PasswordInput
+                  value={newPw}
+                  onChange={setNewPw}
+                  show={showNew}
+                  onToggle={() => setShowNew((v) => !v)}
+                  autoComplete="new-password"
+                />
               </Field>
               <Field label={t.confirmPassword}>
-                <PasswordInput show={showNew} onToggle={() => setShowNew((v) => !v)} autoComplete="new-password" />
+                <PasswordInput
+                  value={confirmPw}
+                  onChange={setConfirmPw}
+                  show={showNew}
+                  onToggle={() => setShowNew((v) => !v)}
+                  autoComplete="new-password"
+                />
               </Field>
             </div>
           </PlateBody>
-          <PlateFooter className="flex items-center justify-between">
-            <span className={`text-[12px] font-mono transition-opacity duration-300 ${pwSaved ? "text-mint opacity-100" : "opacity-0"}`}>
-              <Check className="w-3 h-3 inline mr-1" strokeWidth={2.5} />{t.saved}
-            </span>
-            <Button type="submit" variant="outline" size="sm">{t.updatePassword}</Button>
+          <PlateFooter className="flex items-center justify-end">
+            <Button type="submit" variant="outline" size="sm" disabled={savingPw}>
+              {savingPw ? "Updating…" : t.updatePassword}
+            </Button>
           </PlateFooter>
         </form>
       </Plate>
@@ -180,8 +222,10 @@ export default function ProfilePage() {
         </PlateHeader>
         <PlateBody className="space-y-3 text-[12.5px]">
           <Row label={t.accountType}><span className="font-mono text-bone-muted">local · v0.1</span></Row>
-          <Row label={t.tenant}><span className="font-mono text-bone-muted">—</span></Row>
-          <Row label={t.region}><span className="font-mono text-bone-muted">—</span></Row>
+          <Row label={t.tenant}>
+            <span className="font-mono text-bone-muted">{tenantId ?? "—"}</span>
+          </Row>
+          <Row label={t.region}><span className="font-mono text-bone-muted">local</span></Row>
           <Row label={t.joined}><span className="font-mono text-bone-muted">—</span></Row>
         </PlateBody>
       </Plate>
@@ -196,7 +240,12 @@ export default function ProfilePage() {
             <p className="text-[13px] text-bone">{t.deleteAccount}</p>
             <p className="text-[12px] text-bone-muted mt-0.5">{t.deleteAccountNote}</p>
           </div>
-          <Button variant="outline" size="sm" className="border-flame/40 text-flame hover:bg-flame/[0.08] hover:border-flame/60">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-flame/40 text-flame hover:bg-flame/[0.08] hover:border-flame/60"
+            onClick={() => toast.error("Account deletion not yet available")}
+          >
             {t.deleteAccount}
           </Button>
         </PlateBody>
@@ -224,11 +273,21 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function PasswordInput({ show, onToggle, autoComplete }: { show: boolean; onToggle: () => void; autoComplete: string }) {
+function PasswordInput({
+  value, onChange, show, onToggle, autoComplete,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+  autoComplete: string;
+}) {
   return (
     <div className="relative">
       <input
         type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         autoComplete={autoComplete}
         placeholder="••••••••••••"
         minLength={12}
@@ -240,10 +299,7 @@ function PasswordInput({ show, onToggle, autoComplete }: { show: boolean; onTogg
         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-bone-dim hover:text-bone-muted transition-colors"
         aria-label={show ? "Hide" : "Show"}
       >
-        {show
-          ? <EyeOff className="w-3.5 h-3.5" strokeWidth={1.6} />
-          : <Eye    className="w-3.5 h-3.5" strokeWidth={1.6} />
-        }
+        {show ? <EyeOff className="w-3.5 h-3.5" strokeWidth={1.6} /> : <Eye className="w-3.5 h-3.5" strokeWidth={1.6} />}
       </button>
     </div>
   );

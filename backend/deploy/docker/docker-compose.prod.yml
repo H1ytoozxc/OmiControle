@@ -1,0 +1,89 @@
+version: "3.9"
+
+# Production compose — no dev tooling, services use restart: unless-stopped,
+# ports are internal only (put Nginx/Caddy or a load balancer in front).
+# Copy .env.example → .env and fill in secrets before first run.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-sequoia}
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-sequoia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes: [redis-data:/data]
+    networks: [internal]
+
+  # ── Sequoia backend services ────────────────────────────────────────────────
+
+  auth-service:
+    image: ${REGISTRY:-ghcr.io/your-org/sequoia}/auth-service:${VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_started }
+    networks: [internal]
+
+  device-service:
+    image: ${REGISTRY:-ghcr.io/your-org/sequoia}/device-service:${VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_started }
+    networks: [internal]
+
+  realtime-gateway:
+    image: ${REGISTRY:-ghcr.io/your-org/sequoia}/realtime-gateway:${VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      redis: { condition: service_started }
+    networks: [internal]
+
+  api-gateway:
+    image: ${REGISTRY:-ghcr.io/your-org/sequoia}/api-gateway:${VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:       { condition: service_healthy }
+      redis:          { condition: service_started }
+      auth-service:   { condition: service_started }
+      device-service: { condition: service_started }
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    networks: [internal, public]
+
+  frontend:
+    image: ${REGISTRY:-ghcr.io/your-org/sequoia}/frontend:${VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      # Baked at build time via NEXT_PUBLIC_* — these must match build-time values.
+      # Rebuild the image if you change the API host.
+      NODE_ENV: production
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    networks: [public]
+
+volumes:
+  pgdata:
+  redis-data:
+
+networks:
+  internal:
+  public:

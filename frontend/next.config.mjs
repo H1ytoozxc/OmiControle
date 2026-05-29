@@ -4,11 +4,14 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "motion", "@radix-ui/react-dialog"],
   },
-  // Tauri build: `next build && next export` is replaced by `output: "export"`
-  // when SEQUOIA_DESKTOP=1 is set.
+  // Tauri desktop build exports static files.
+  // Production server build uses standalone mode for Docker.
+  // Dev mode uses neither (default Next.js server).
   ...(process.env.SEQUOIA_DESKTOP === "1"
     ? { output: "export", images: { unoptimized: true } }
-    : {}),
+    : process.env.NODE_ENV === "production"
+      ? { output: "standalone" }
+      : {}),
   headers: async () => [
     {
       source: "/(.*)",

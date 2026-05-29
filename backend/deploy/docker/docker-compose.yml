@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   postgres:
-    image: timescale/timescaledb-ha:pg16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: sequoia
       POSTGRES_PASSWORD: sequoia

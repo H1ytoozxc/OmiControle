@@ -18,7 +18,22 @@ pub struct User {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UserStatus { Active, Disabled, Locked }
+pub enum UserStatus {
+    Active,
+    Disabled,
+    Locked,
+    /// Account created but not yet approved by an admin.
+    Pending,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewUser {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub password_hash: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct Session {

@@ -23,6 +23,8 @@ const PUBLIC_PREFIXES: &[&str] = &[
     // Logout authenticates via possession of the refresh_token in the body —
     // requiring a valid access token would prevent logout after expiry.
     "/v1/auth/logout",
+    // Registration is public; new accounts start as 'pending' until admin approval.
+    "/v1/auth/register",
 ];
 
 pub async fn auth_layer(

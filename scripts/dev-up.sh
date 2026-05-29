@@ -47,7 +47,7 @@ fi
 
 if ! cargo sqlx --version >/dev/null 2>&1; then
   warn "sqlx-cli not installed — installing now"
-  cargo install sqlx-cli --no-default-features --features rustls,postgres
+  cargo install sqlx-cli --version "=0.8.6" --locked --no-default-features --features rustls,postgres
 fi
 ok "All prerequisites present"
 
@@ -208,9 +208,20 @@ EOF
 step "Running database migrations"
 export DATABASE_URL="$DB_URL"
 cd "$BACKEND"
+COMPOSE_FILE_ABS="$REPO_ROOT/backend/deploy/docker/docker-compose.yml"
+pg_exec() {
+  docker compose -f "$COMPOSE_FILE_ABS" exec -T postgres \
+    psql -U sequoia -d sequoia -c "$1" >/dev/null 2>&1
+}
+
 for schema in auth device ai workflow telemetry notification plugin audit; do
   if [ -d "migrations/$schema" ]; then
-    cargo sqlx migrate run --source "migrations/$schema" --database-url "$DB_URL"
+    # Create schema first so _sqlx_migrations can land there
+    pg_exec "CREATE SCHEMA IF NOT EXISTS $schema;" || true
+    SCHEMA_URL="${DB_URL}?options=-c+search_path%3D${schema}"
+    cargo sqlx migrate run \
+      --source "migrations/$schema" \
+      --database-url "$SCHEMA_URL"
     ok "Migrated $schema"
   fi
 done
@@ -230,8 +241,13 @@ if [ "${1:-}" = "services" ]; then
       warn "$svc already running"
       return
     fi
-    env SEQUOIA_CONFIG_DIR="$CONFIG" \
-        ./target/release/"$svc" --config "$CONFIG/$cfg.toml" \
+    # Config lib looks for config/config.toml relative to SEQUOIA_CONFIG_DIR.
+    # Create a per-service dir with config.toml pointing at the service TOML.
+    local svc_cfg_dir="$CONFIG/$svc"
+    mkdir -p "$svc_cfg_dir"
+    cp "$CONFIG/$cfg.toml" "$svc_cfg_dir/config.toml"
+    env SEQUOIA_CONFIG_DIR="$svc_cfg_dir" \
+        ./target/release/"$svc" \
         >"$LOGS/$svc.log" 2>&1 &
     echo $! >"$LOGS/$svc.pid"
     ok "Started $svc (pid $!, logs: $LOGS/$svc.log)"

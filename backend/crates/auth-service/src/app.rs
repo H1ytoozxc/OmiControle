@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
-use argon2::password_hash::{PasswordHash, PasswordVerifier};
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use sequoia_auth::{IssueParams, Issuer};
 use sequoia_common::Error;
 use sha2::{Digest, Sha256};
@@ -15,7 +16,7 @@ use uuid::Uuid;
 
 use crate::adapters::{PgRefreshRepo, PgSessionRepo, PgUserRepo};
 use crate::config::AuthConfig;
-use crate::domain::{RefreshToken, Session, UserStatus};
+use crate::domain::{NewUser, RefreshToken, Session, User, UserStatus};
 use crate::ports::{RefreshRepository, SessionRepository, UserRepository};
 
 pub struct AuthApp {
@@ -54,9 +55,14 @@ impl AuthApp {
         let user = self.users.find_by_email(tenant_id, email).await
             .map_err(Error::from)?
             .ok_or(Error::Unauthenticated)?;
-        if user.status != UserStatus::Active {
-            return Err(Error::Forbidden("account not active"));
+
+        match user.status {
+            UserStatus::Pending  => return Err(Error::Forbidden("account_pending_approval")),
+            UserStatus::Disabled => return Err(Error::Forbidden("account_disabled")),
+            UserStatus::Locked   => return Err(Error::Forbidden("account_locked")),
+            UserStatus::Active   => {}
         }
+
         let hash_str = self.users.password_hash(user.id).await
             .map_err(Error::from)?
             .ok_or(Error::Unauthenticated)?;
@@ -77,6 +83,71 @@ impl AuthApp {
         self.issue_pair(session, user.id, "role:user").await
     }
 
+    /// Register a new user. Account starts as 'pending' until an admin approves it.
+    pub async fn register(
+        &self,
+        tenant_id: Uuid,
+        email: &str,
+        password: &str,
+        display_name: Option<&str>,
+    ) -> Result<Uuid, Error> {
+        if password.len() < 12 {
+            return Err(Error::BadRequest("password must be at least 12 characters".into()));
+        }
+
+        // Idempotent: if the email already exists (active or pending), return conflict.
+        if self.users.find_by_email(tenant_id, email).await.map_err(Error::from)?.is_some() {
+            return Err(Error::Conflict("email_already_registered"));
+        }
+
+        let hash = hash_password(password)
+            .map_err(|e| Error::Internal(anyhow!("hash: {e}")))?;
+
+        let id = Uuid::from_u128(ulid::Ulid::new().0);
+        let user = NewUser {
+            id,
+            tenant_id,
+            email: email.to_owned(),
+            display_name: display_name.map(str::to_owned),
+            password_hash: hash,
+        };
+        self.users.create(&user).await.map_err(Error::from)?;
+        Ok(id)
+    }
+
+    /// List all users with status = 'pending' for a tenant.
+    pub async fn list_pending(&self, tenant_id: Uuid) -> Result<Vec<User>, Error> {
+        self.users.list_pending(tenant_id).await.map_err(Error::from)
+    }
+
+    /// Approve a pending user — sets status to 'active'.
+    pub async fn approve(&self, tenant_id: Uuid, user_id: Uuid) -> Result<(), Error> {
+        let user = self.users.find_by_id(user_id).await
+            .map_err(Error::from)?
+            .ok_or(Error::NotFound("user not found"))?;
+        if user.tenant_id != tenant_id {
+            return Err(Error::Forbidden("tenant mismatch"));
+        }
+        if user.status != UserStatus::Pending {
+            return Err(Error::BadRequest("user is not pending".into()));
+        }
+        self.users.update_status(user_id, UserStatus::Active).await.map_err(Error::from)
+    }
+
+    /// Reject and delete a pending user registration.
+    pub async fn reject(&self, tenant_id: Uuid, user_id: Uuid) -> Result<(), Error> {
+        let user = self.users.find_by_id(user_id).await
+            .map_err(Error::from)?
+            .ok_or(Error::NotFound("user not found"))?;
+        if user.tenant_id != tenant_id {
+            return Err(Error::Forbidden("tenant mismatch"));
+        }
+        if user.status != UserStatus::Pending {
+            return Err(Error::BadRequest("user is not pending".into()));
+        }
+        self.users.delete(user_id).await.map_err(Error::from)
+    }
+
     /// Refresh-token rotation. Detects reuse → revokes the entire family.
     pub async fn refresh(&self, refresh_token: &str) -> Result<TokenPair, Error> {
         let hash = sha256(refresh_token.as_bytes());
@@ -85,7 +156,6 @@ impl AuthApp {
             .ok_or(Error::Unauthenticated)?;
 
         if row.revoked_at.is_some() {
-            // Re-use of revoked → likely token theft. Kill the entire chain.
             let _ = self.refresh.revoke_family(row.session_id, "reuse detected").await;
             let _ = self.sessions.revoke(row.session_id, "reuse detected").await;
             return Err(Error::Unauthenticated);
@@ -93,21 +163,16 @@ impl AuthApp {
         if row.expires_at <= OffsetDateTime::now_utc() {
             return Err(Error::Unauthenticated);
         }
-        // Rotate.
         self.refresh.revoke(row.id, "rotated").await.map_err(Error::from)?;
         let session = Session {
             id: row.session_id,
-            user_id: Uuid::nil(),   // not actually needed below
+            user_id: Uuid::nil(),
             tenant_id: Uuid::nil(),
             created_at: OffsetDateTime::now_utc(),
         };
         self.issue_pair(session, Uuid::nil(), "role:user").await
     }
 
-    /// Revoke a refresh token's entire family and its session.
-    ///
-    /// Idempotent: an unknown or already-revoked token still returns Ok so
-    /// callers can't enumerate live tokens by observing the response.
     pub async fn logout(&self, refresh_token: &str) -> Result<(), Error> {
         let hash = sha256(refresh_token.as_bytes());
         if let Some(row) = self.refresh.find_by_hash(&hash).await.map_err(Error::from)? {
@@ -120,7 +185,7 @@ impl AuthApp {
     async fn issue_pair(&self, session: Session, user_id: Uuid, scope: &str) -> Result<TokenPair, Error> {
         let (access_token, _) = self.issuer.issue(IssueParams {
             kid: self.cfg.jwt.signing_keys.iter().find(|k| k.active).map(|k| k.kid.as_str()).unwrap_or(""),
-            key_pem: &[],   // not used at this layer — Issuer holds the EncodingKey
+            key_pem: &[],
             issuer: &self.cfg.jwt.issuer,
             audience: &self.cfg.jwt.audience,
             subject: &user_id.to_string(),
@@ -130,7 +195,6 @@ impl AuthApp {
             ttl_secs: self.cfg.jwt.access_ttl_s,
         }).map_err(|e| Error::Internal(anyhow!("issue: {e}")))?;
 
-        // Refresh token = 32 random bytes, base64; we store its SHA256.
         let mut raw = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut raw);
         let refresh_token = base64_encode_urlsafe(&raw);
@@ -173,4 +237,13 @@ fn sha256(data: &[u8]) -> [u8; 32] {
 fn base64_encode_urlsafe(data: &[u8]) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     URL_SAFE_NO_PAD.encode(data)
+}
+
+fn hash_password(password: &str) -> anyhow::Result<String> {
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| anyhow!("{e}"))?
+        .to_string();
+    Ok(hash)
 }

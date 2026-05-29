@@ -12,9 +12,35 @@ import { LanguageProvider } from "@/lib/i18n";
 import { useSession } from "@/lib/auth/session";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // Hydrate token store from localStorage once on mount.
+  // Hydrate token store from localStorage once on mount, then auto-refresh
+  // the access token if we only have a refresh token (page reload scenario).
   React.useEffect(() => {
-    useSession.getState().hydrate();
+    const session = useSession.getState();
+    session.hydrate();
+    const { refreshToken, tenantId } = useSession.getState();
+    if (refreshToken) {
+      fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/v1/auth/refresh`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        }
+      )
+        .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then((resp: { access_token: string; refresh_token: string }) => {
+          useSession.getState().setSession({
+            accessToken: resp.access_token,
+            refreshToken: resp.refresh_token,
+            tenantId: tenantId ?? "",
+          });
+        })
+        .catch(() => {
+          // Refresh token is expired or revoked — log out cleanly
+          useSession.getState().clearSession();
+        });
+    }
   }, []);
 
   const [client] = React.useState(

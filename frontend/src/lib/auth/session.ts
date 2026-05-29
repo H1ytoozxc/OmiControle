@@ -49,6 +49,9 @@ export const useSession = create<SessionState>((set) => ({
     if (typeof window !== "undefined") {
       localStorage.setItem(REFRESH_KEY, refreshToken);
       localStorage.setItem(TENANT_KEY, tenantId);
+      // Presence cookie read by middleware (Edge) to gate (app) routes.
+      // Not a secret — real auth is the access JWT sent to the API.
+      document.cookie = `sq_auth=1; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
     }
     set({ accessToken, refreshToken, tenantId, hydrated: true });
   },
@@ -57,6 +60,7 @@ export const useSession = create<SessionState>((set) => ({
     if (typeof window !== "undefined") {
       localStorage.removeItem(REFRESH_KEY);
       localStorage.removeItem(TENANT_KEY);
+      document.cookie = "sq_auth=; path=/; max-age=0";
     }
     set({ accessToken: null, refreshToken: null, tenantId: null });
   },

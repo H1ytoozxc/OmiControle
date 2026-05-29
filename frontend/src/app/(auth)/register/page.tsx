@@ -2,16 +2,56 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Github, Mail, ArrowRight, Eye, EyeOff, Check } from "lucide-react";
 import { Button } from "@/components/primitives";
 import { useT } from "@/lib/i18n";
+import { api, ApiError } from "@/lib/api/client";
 
 type Step = "account" | "org" | "done";
+
+interface FormState {
+  displayName: string;
+  email: string;
+  password: string;
+  tenantId: string;
+}
 
 export default function RegisterPage() {
   const [step, setStep] = React.useState<Step>("account");
   const [showPw, setShowPw] = React.useState(false);
+  const [form, setForm] = React.useState<FormState>({
+    displayName: "", email: "", password: "", tenantId: "",
+  });
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const t = useT().register;
+  const router = useRouter();
+
+  async function submitRegistration() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api("/v1/auth/register", {
+        method: "POST",
+        body: {
+          tenant_id: form.tenantId,
+          email: form.email,
+          password: form.password,
+          display_name: form.displayName,
+        },
+      });
+      router.push("/pending-approval");
+    } catch (err) {
+      const msg = err instanceof ApiError
+        ? (err.code === "conflict" ? "This email is already registered." : err.message)
+        : "Registration failed. Try again.";
+      setError(msg);
+      setStep("account");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-ink">
@@ -70,9 +110,33 @@ export default function RegisterPage() {
             ))}
           </div>
 
-          {step === "account" && <AccountStep t={t} onNext={() => setStep("org")} showPw={showPw} setShowPw={setShowPw} />}
-          {step === "org"     && <OrgStep     t={t} onNext={() => setStep("done")} onBack={() => setStep("account")} />}
-          {step === "done"    && <DoneStep    t={t} />}
+          {error && (
+            <div className="mb-4 p-3 rounded-sm border border-flame/30 bg-flame/[0.06] text-[12.5px] text-flame">
+              {error}
+            </div>
+          )}
+
+          {step === "account" && (
+            <AccountStep
+              t={t}
+              form={form}
+              setForm={setForm}
+              showPw={showPw}
+              setShowPw={setShowPw}
+              onNext={() => setStep("org")}
+            />
+          )}
+          {step === "org" && (
+            <OrgStep
+              t={t}
+              form={form}
+              setForm={setForm}
+              submitting={submitting}
+              onNext={submitRegistration}
+              onBack={() => setStep("account")}
+            />
+          )}
+          {step === "done" && <DoneStep t={t} />}
         </div>
       </main>
     </div>
@@ -81,7 +145,16 @@ export default function RegisterPage() {
 
 type Tr = ReturnType<typeof useT>["register"];
 
-function AccountStep({ t, onNext, showPw, setShowPw }: { t: Tr; onNext: () => void; showPw: boolean; setShowPw: (v: boolean) => void }) {
+function AccountStep({
+  t, form, setForm, showPw, setShowPw, onNext,
+}: {
+  t: Tr;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  showPw: boolean;
+  setShowPw: (v: boolean) => void;
+  onNext: () => void;
+}) {
   return (
     <div className="space-y-5">
       <div>
@@ -93,11 +166,11 @@ function AccountStep({ t, onNext, showPw, setShowPw }: { t: Tr; onNext: () => vo
       </div>
 
       <div className="space-y-2">
-        <Button variant="plate" size="lg" className="w-full justify-between">
+        <Button variant="plate" size="lg" className="w-full justify-between" type="button">
           <span className="flex items-center gap-2.5"><Github className="w-4 h-4" strokeWidth={1.6} />{t.continueGitHub}</span>
           <ArrowRight className="w-3.5 h-3.5 text-bone-dim" strokeWidth={1.6} />
         </Button>
-        <Button variant="plate" size="lg" className="w-full justify-between">
+        <Button variant="plate" size="lg" className="w-full justify-between" type="button">
           <span className="flex items-center gap-2.5"><Mail className="w-4 h-4" strokeWidth={1.6} />{t.continueGoogle}</span>
           <ArrowRight className="w-3.5 h-3.5 text-bone-dim" strokeWidth={1.6} />
         </Button>
@@ -112,24 +185,49 @@ function AccountStep({ t, onNext, showPw, setShowPw }: { t: Tr; onNext: () => vo
       <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onNext(); }}>
         <label className="flex flex-col gap-1.5">
           <span className="eyebrow">{t.fullName}</span>
-          <input type="text" autoComplete="name" placeholder="Jane Smith" required
-            className="h-9 px-3 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone placeholder:text-bone-dim transition-colors" />
+          <input
+            type="text"
+            autoComplete="name"
+            placeholder="Jane Smith"
+            required
+            value={form.displayName}
+            onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+            className="field-input"
+          />
         </label>
 
         <label className="flex flex-col gap-1.5">
           <span className="eyebrow">{t.workEmail}</span>
-          <input type="email" autoComplete="email" placeholder="you@company.com" required
-            className="h-9 px-3 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone placeholder:text-bone-dim transition-colors" />
+          <input
+            type="email"
+            autoComplete="email"
+            placeholder="you@company.com"
+            required
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            className="field-input"
+          />
         </label>
 
         <label className="flex flex-col gap-1.5">
           <span className="eyebrow">{t.passwordLabel}</span>
           <div className="relative">
-            <input type={showPw ? "text" : "password"} autoComplete="new-password" placeholder={t.passwordHint} required minLength={12}
-              className="w-full h-9 px-3 pr-9 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone placeholder:text-bone-dim transition-colors" />
-            <button type="button" onClick={() => setShowPw(!showPw)}
+            <input
+              type={showPw ? "text" : "password"}
+              autoComplete="new-password"
+              placeholder={t.passwordHint}
+              required
+              minLength={12}
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              className="field-input pr-9"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw(!showPw)}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-bone-dim hover:text-bone-muted transition-colors"
-              aria-label={showPw ? "Hide" : "Show"}>
+              aria-label={showPw ? "Hide" : "Show"}
+            >
               {showPw ? <EyeOff className="w-3.5 h-3.5" strokeWidth={1.6} /> : <Eye className="w-3.5 h-3.5" strokeWidth={1.6} />}
             </button>
           </div>
@@ -151,7 +249,16 @@ function AccountStep({ t, onNext, showPw, setShowPw }: { t: Tr; onNext: () => vo
   );
 }
 
-function OrgStep({ t, onNext, onBack }: { t: Tr; onNext: () => void; onBack: () => void }) {
+function OrgStep({
+  t, form, setForm, submitting, onNext, onBack,
+}: {
+  t: Tr;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  submitting: boolean;
+  onNext: () => void;
+  onBack: () => void;
+}) {
   return (
     <div className="space-y-5">
       <div>
@@ -161,41 +268,25 @@ function OrgStep({ t, onNext, onBack }: { t: Tr; onNext: () => void; onBack: () 
 
       <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onNext(); }}>
         <label className="flex flex-col gap-1.5">
-          <span className="eyebrow">{t.orgName}</span>
-          <input type="text" placeholder="Acme Corp" required
-            className="h-9 px-3 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone placeholder:text-bone-dim transition-colors" />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="eyebrow">{t.tenantSlug}</span>
-          <div className="flex items-center h-9 rounded-sm bg-ink-50/60 border border-white/[0.08] focus-within:border-ember/40 transition-colors overflow-hidden">
-            <span className="px-3 text-[12px] font-mono text-bone-dim border-r border-white/[0.06] h-full flex items-center bg-ink-100/40">
-              sequoia.io/
-            </span>
-            <input type="text" placeholder="acme" required pattern="[a-z0-9-]+"
-              className="flex-1 px-3 bg-transparent outline-none text-[13px] text-bone placeholder:text-bone-dim font-mono" />
-          </div>
-          <span className="text-[10.5px] font-mono text-bone-dim">{t.slugHint}</span>
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="eyebrow">{t.region}</span>
-          <select required
-            className="h-9 px-3 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone transition-colors appearance-none cursor-pointer">
-            <option value="">{t.regionPlaceholder}</option>
-            <option value="us-west-2">US West (Oregon)</option>
-            <option value="us-east-1">US East (Virginia)</option>
-            <option value="eu-west-1">EU West (Ireland)</option>
-            <option value="eu-central-1">EU Central (Frankfurt)</option>
-            <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
-          </select>
+          <span className="eyebrow">Tenant ID</span>
+          <input
+            type="text"
+            placeholder="01HX… (ULID of your organisation)"
+            required
+            value={form.tenantId}
+            onChange={(e) => setForm((f) => ({ ...f, tenantId: e.target.value }))}
+            className="field-input font-mono"
+          />
+          <span className="text-[10.5px] font-mono text-bone-dim">
+            Ask your Sequoia administrator for the tenant ID.
+          </span>
         </label>
 
         <div className="flex gap-2 mt-1">
           <Button type="button" variant="outline" size="lg" className="flex-1" onClick={onBack}>{t.back}</Button>
-          <Button type="submit" variant="ember" size="lg" className="flex-1">
-            {t.createOrg}
-            <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.8} />
+          <Button type="submit" variant="ember" size="lg" className="flex-1" disabled={submitting}>
+            {submitting ? "Submitting…" : t.createOrg}
+            {!submitting && <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.8} />}
           </Button>
         </div>
       </form>
@@ -213,12 +304,6 @@ function DoneStep({ t }: { t: Tr }) {
         <h2 className="text-[24px] font-semibold text-bone tracking-tight">{t.doneTitle}</h2>
         <p className="text-[13px] text-bone-muted mt-1 max-w-[280px] mx-auto leading-relaxed">{t.doneSubtitle}</p>
       </div>
-      <Button variant="ember" size="lg" className="w-full" asChild>
-        <Link href="/onboarding">
-          {t.connectDevice}
-          <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.8} />
-        </Link>
-      </Button>
     </div>
   );
 }

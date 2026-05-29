@@ -45,6 +45,10 @@ export default function LoginPage() {
       });
       router.push("/dashboard");
     } catch (err) {
+      if (err instanceof ApiError && err.message === "account_pending_approval") {
+        router.push("/pending-approval");
+        return;
+      }
       const msg = err instanceof ApiError ? err.message : "Sign-in failed. Try again.";
       setError(msg);
     } finally {

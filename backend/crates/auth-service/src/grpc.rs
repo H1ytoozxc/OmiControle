@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
+use prost_types::Timestamp;
 use sequoia_proto::sequoia::v1 as pb;
 use tonic::{Request, Response, Status};
+use uuid::Uuid;
 
 use crate::app::AuthApp;
 
@@ -33,7 +35,7 @@ impl pb::auth_service_server::AuthService for AuthGrpc {
                 }))
             }
             Some(pb::issue_tokens_request::Primary::Oidc(_)) => {
-                Err(Status::unimplemented("oidc flow wired via /auth/oidc/* HTTP endpoints"))
+                Err(Status::unimplemented("oidc not yet wired"))
             }
             None => Err(Status::invalid_argument("primary credential missing")),
         }
@@ -73,7 +75,7 @@ impl pb::auth_service_server::AuthService for AuthGrpc {
         &self,
         _req: Request<pb::RequestContext>,
     ) -> Result<Response<pb::WsTicket>, Status> {
-        Err(Status::unimplemented("not yet"))
+        Err(Status::unimplemented("issued by api-gateway directly"))
     }
 
     async fn jwks(
@@ -82,11 +84,77 @@ impl pb::auth_service_server::AuthService for AuthGrpc {
     ) -> Result<Response<pb::JwksResponse>, Status> {
         Err(Status::unimplemented("served via HTTPS /.well-known/jwks.json"))
     }
+
+    async fn register(
+        &self,
+        req: Request<pb::RegisterRequest>,
+    ) -> Result<Response<pb::RegisterResponse>, Status> {
+        let r = req.into_inner();
+        let tenant = parse_uuid(&r.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let display = if r.display_name.is_empty() { None } else { Some(r.display_name.as_str()) };
+        let user_id = self.app
+            .register(tenant, &r.email, &r.password, display)
+            .await
+            .map_err(map_err)?;
+        Ok(Response::new(pb::RegisterResponse {
+            user_id: user_id.to_string(),
+            status: "pending_approval".into(),
+        }))
+    }
+
+    async fn list_pending_users(
+        &self,
+        req: Request<pb::ListPendingUsersRequest>,
+    ) -> Result<Response<pb::ListPendingUsersResponse>, Status> {
+        let ctx = req.into_inner().context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let tenant = parse_uuid(&ctx.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let users = self.app.list_pending(tenant).await.map_err(map_err)?;
+        let items = users.into_iter().map(|u| pb::PendingUser {
+            user_id: u.id.to_string(),
+            email: u.email,
+            display_name: u.display_name.unwrap_or_default(),
+            registered_at: Some(Timestamp {
+                seconds: u.created_at.unix_timestamp(),
+                nanos: 0,
+            }),
+        }).collect();
+        Ok(Response::new(pb::ListPendingUsersResponse { users: items }))
+    }
+
+    async fn approve_user(
+        &self,
+        req: Request<pb::ApproveUserRequest>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let r = req.into_inner();
+        let ctx = r.context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let tenant = parse_uuid(&ctx.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let user = parse_uuid(&r.user_id)
+            .map_err(|_| Status::invalid_argument("bad user_id"))?;
+        self.app.approve(tenant, user).await.map_err(map_err)?;
+        Ok(Response::new(pb::Empty {}))
+    }
+
+    async fn reject_user(
+        &self,
+        req: Request<pb::RejectUserRequest>,
+    ) -> Result<Response<pb::Empty>, Status> {
+        let r = req.into_inner();
+        let ctx = r.context.ok_or_else(|| Status::invalid_argument("missing context"))?;
+        let tenant = parse_uuid(&ctx.tenant_id)
+            .map_err(|_| Status::invalid_argument("bad tenant_id"))?;
+        let user = parse_uuid(&r.user_id)
+            .map_err(|_| Status::invalid_argument("bad user_id"))?;
+        self.app.reject(tenant, user).await.map_err(map_err)?;
+        Ok(Response::new(pb::Empty {}))
+    }
 }
 
-fn parse_uuid(s: &str) -> Result<uuid::Uuid, ()> {
-    uuid::Uuid::parse_str(s).map_err(|_| ())
-        .or_else(|_| ulid::Ulid::from_string(s).map(|u| uuid::Uuid::from_u128(u.0)).map_err(|_| ()))
+fn parse_uuid(s: &str) -> Result<Uuid, ()> {
+    Uuid::parse_str(s).map_err(|_| ())
+        .or_else(|_| ulid::Ulid::from_string(s).map(|u| Uuid::from_u128(u.0)).map_err(|_| ()))
 }
 
 fn map_err(e: sequoia_common::Error) -> Status {

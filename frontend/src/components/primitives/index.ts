@@ -5,3 +5,4 @@ export { Stat } from "./Stat";
 export { Sparkline } from "./Sparkline";
 export { SignalDot } from "./SignalDot";
 export { Kbd } from "./Kbd";
+export { Modal } from "./Modal";
