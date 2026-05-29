@@ -95,6 +95,39 @@ impl Issuer {
     }
 }
 
+/// Verifies tokens with a single pre-loaded EC public key.
+///
+/// Use this when the signer and verifier live in the same process (no JWKS
+/// fetch needed) — e.g. device-service verifying its own device JWTs.
+#[derive(Clone)]
+pub struct LocalVerifier {
+    decoding: Arc<DecodingKey>,
+    issuer: Arc<String>,
+    audience: Arc<String>,
+}
+
+impl LocalVerifier {
+    pub fn from_es256_pem(pem: &[u8], issuer: String, audience: String) -> Result<Self, JwtError> {
+        let decoding = DecodingKey::from_ec_pem(pem)
+            .map_err(|e| JwtError::Decode(e.to_string()))?;
+        Ok(Self {
+            decoding: Arc::new(decoding),
+            issuer: Arc::new(issuer),
+            audience: Arc::new(audience),
+        })
+    }
+
+    pub fn verify(&self, token: &str) -> Result<Claims, JwtError> {
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_issuer(&[self.issuer.as_str()]);
+        validation.set_audience(&[self.audience.as_str()]);
+        validation.leeway = 30;
+        let data = decode::<Claims>(token, &self.decoding, &validation)
+            .map_err(|e| JwtError::Decode(e.to_string()))?;
+        Ok(data.claims)
+    }
+}
+
 #[derive(Clone)]
 pub struct Verifier {
     issuer: Arc<String>,

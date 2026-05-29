@@ -2,14 +2,55 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fingerprint, Github, Mail, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/primitives";
 import { useT, useLang } from "@/lib/i18n";
+import { api, ApiError } from "@/lib/api/client";
+import { useSession } from "@/lib/auth/session";
+
+interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  access_ttl_s: number;
+  refresh_ttl_s: number;
+}
 
 export default function LoginPage() {
   const [showPw, setShowPw] = React.useState(false);
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [tenantId, setTenantId] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const t = useT().login;
   const { lang, toggle } = useLang();
+  const router = useRouter();
+  const setSession = useSession((s) => s.setSession);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const resp = await api<LoginResponse>("/v1/auth/login", {
+        method: "POST",
+        body: { tenant_id: tenantId, email, password },
+      });
+      setSession({
+        accessToken: resp.access_token,
+        refreshToken: resp.refresh_token,
+        tenantId,
+      });
+      router.push("/dashboard");
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Sign-in failed. Try again.";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-ink">
@@ -90,7 +131,19 @@ export default function LoginPage() {
           </div>
 
           {/* email/password */}
-          <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
+          <form className="space-y-3" onSubmit={submit}>
+            <label className="flex flex-col gap-1.5">
+              <span className="eyebrow">Tenant ID</span>
+              <input
+                type="text"
+                value={tenantId}
+                onChange={(e) => setTenantId(e.target.value)}
+                placeholder="01HX..."
+                required
+                className="field-input font-mono"
+              />
+            </label>
+
             <label className="flex flex-col gap-1.5">
               <span className="eyebrow">{t.email}</span>
               <input
@@ -98,7 +151,9 @@ export default function LoginPage() {
                 autoComplete="email"
                 placeholder="you@company.com"
                 required
-                className="h-9 px-3 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone placeholder:text-bone-dim transition-colors"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="field-input"
               />
             </label>
 
@@ -110,7 +165,9 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   placeholder="••••••••"
                   required
-                  className="w-full h-9 px-3 pr-9 rounded-sm bg-ink-50/60 border border-white/[0.08] focus:border-ember/40 outline-none text-[13px] text-bone placeholder:text-bone-dim transition-colors"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="field-input pr-9"
                 />
                 <button
                   type="button"
@@ -123,14 +180,18 @@ export default function LoginPage() {
               </div>
             </label>
 
+            {error && (
+              <p className="text-[12px] text-flame leading-relaxed">{error}</p>
+            )}
+
             <div className="flex justify-end">
               <Link href="/forgot-password" className="text-[11.5px] font-mono text-bone-dim hover:text-bone-muted transition-colors">
                 {t.forgotPassword}
               </Link>
             </div>
 
-            <Button type="submit" variant="ember" size="lg" className="w-full mt-1">
-              {t.signIn}
+            <Button type="submit" variant="ember" size="lg" className="w-full mt-1" disabled={submitting}>
+              {submitting ? "…" : t.signIn}
             </Button>
           </form>
         </div>

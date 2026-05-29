@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use futures::Stream;
 use rand::Rng;
-use sequoia_auth::{IssueParams, Issuer};
+use sequoia_auth::{IssueParams, Issuer, LocalVerifier};
 use sequoia_proto::sequoia::v1 as pb;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -52,6 +52,9 @@ pub struct DeviceGrpc {
     pub cfg: Arc<DeviceConfig>,
     /// ES256 issuer for device JWTs (separate trust domain from user tokens).
     pub jwt_issuer: Issuer,
+    /// Verifier for incoming device JWTs on Channel — uses the public key
+    /// matching `jwt_issuer`. Same trust domain only, no JWKS dance.
+    pub jwt_verifier: LocalVerifier,
 }
 
 type SrvStream =
@@ -208,13 +211,22 @@ impl pb::device_service_server::DeviceService for DeviceGrpc {
         &self,
         req: Request<Streaming<pb::ClientMessage>>,
     ) -> Result<Response<Self::ChannelStream>, Status> {
-        // Identify the device from the JWT in metadata.
-        let device_id = req
+        // Authenticate: pull the device JWT out of `authorization: Bearer <jwt>`,
+        // verify signature + issuer + audience + expiry, then trust the `sub`
+        // as the device identity. No more bare-header impersonation.
+        let auth = req
             .metadata()
-            .get("x-device-id")
+            .get("authorization")
             .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| Status::unauthenticated("missing x-device-id"))?
-            .to_owned();
+            .ok_or_else(|| Status::unauthenticated("missing authorization header"))?;
+        let token = auth.strip_prefix("Bearer ")
+            .ok_or_else(|| Status::unauthenticated("expected Bearer token"))?;
+        let claims = self.jwt_verifier.verify(token)
+            .map_err(|e| Status::unauthenticated(format!("invalid device jwt: {e}")))?;
+        if claims.kind != "device" {
+            return Err(Status::permission_denied("token is not a device token"));
+        }
+        let device_id = claims.sub.clone();
 
         let mut inbound = req.into_inner();
         let (tx, rx) = mpsc::channel::<pb::ServerMessage>(self.cfg.channel_capacity);

@@ -3,10 +3,13 @@
  *
  * Conventions:
  *   - All non-2xx throw an ApiError carrying status + RFC-7807 problem details.
- *   - `credentials: "include"` so the gateway sees the httpOnly access cookie.
+ *   - Adds `Authorization: Bearer <access_token>` from the session store when
+ *     present. The gateway also accepts cookies, kept on for forward-compat.
  *   - `x-correlation-id` minted client-side for trace continuity if the
  *     SSR layer didn't supply one.
  */
+
+import { getAccessToken } from "@/lib/auth/session";
 
 export class ApiError extends Error {
   constructor(
@@ -28,16 +31,20 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
     if (v !== undefined) url.searchParams.set(k, String(v));
 
   const corr = crypto.randomUUID().replace(/-/g, "");
+  const token = getAccessToken();
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "accept": "application/json",
+    "x-correlation-id": corr,
+    ...((opts.headers as Record<string, string>) ?? {}),
+  };
+  if (token) headers["authorization"] = `Bearer ${token}`;
 
   const res = await fetch(url.toString(), {
     method: opts.method ?? "GET",
     credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      "accept": "application/json",
-      "x-correlation-id": corr,
-      ...(opts.headers ?? {}),
-    },
+    headers,
     body: opts.body != null ? JSON.stringify(opts.body) : undefined,
     cache: opts.cache,
     signal: opts.signal,

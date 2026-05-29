@@ -56,6 +56,18 @@ fn require_auth_client(s: &AppState) -> Result<pb::auth_service_client::AuthServ
     s.auth_client.clone().ok_or(Error::UpstreamUnavailable("auth-service not configured"))
 }
 
+fn require_ai_client(s: &AppState) -> Result<pb::ai_orchestrator_client::AiOrchestratorClient<tonic::transport::Channel>, Error> {
+    s.ai_client.clone().ok_or(Error::UpstreamUnavailable("ai-orchestrator not configured"))
+}
+
+fn require_workflow_client(s: &AppState) -> Result<pb::workflow_engine_client::WorkflowEngineClient<tonic::transport::Channel>, Error> {
+    s.workflow_client.clone().ok_or(Error::UpstreamUnavailable("workflow-engine not configured"))
+}
+
+fn require_notify_client(s: &AppState) -> Result<pb::notification_service_client::NotificationServiceClient<tonic::transport::Channel>, Error> {
+    s.notify_client.clone().ok_or(Error::UpstreamUnavailable("notification-service not configured"))
+}
+
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/healthz/live",  get(|| async { (StatusCode::OK, "ok") }))
@@ -85,40 +97,112 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/workflows/:id/instances",post(wf_start))
         .route("/v1/workflows/instances/:id",get(wf_get))
 
+        // Notifications
+        .route("/v1/notifications/channels", get(notif_channels))
+
+        // Dashboard overview — aggregate of device counts.
+        .route("/v1/stats/overview", get(stats_overview))
+
         .with_state(state)
 }
 
 #[derive(Serialize)] struct Health { ok: bool }
 async fn ready(State(_s): State<Arc<AppState>>) -> Json<Health> { Json(Health { ok: true }) }
 
-async fn metrics() -> &'static str {
-    // metrics-exporter-prometheus installs a global recorder; this is a stub
-    // — production routes /metrics to the exporter's `render()`.
-    ""
+async fn metrics(State(s): State<Arc<AppState>>) -> Result<axum::response::Response, ApiError> {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+    let Some(handle) = s.prometheus.as_ref() else {
+        return Err(Error::UpstreamUnavailable("metrics not enabled").into());
+    };
+    let body = handle.render();
+    let mut resp = body.into_response();
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("text/plain; version=0.0.4"),
+    );
+    Ok(resp)
 }
 
-async fn jwks(State(_s): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    // proxied from auth-service
-    Json(serde_json::json!({ "keys": [] }))
+async fn jwks(State(s): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, ApiError> {
+    // Proxy JWKS from auth-service. auth-service.Jwks returns JSON verbatim
+    // — we re-encode here so the client gets a consistent application/json
+    // shape regardless of whether the upstream is wired.
+    let mut client = require_auth_client(&s)?;
+    let resp = client.jwks(pb::Empty {}).await.map_err(map_grpc)?;
+    let json = resp.into_inner().keys_json;
+    let parsed: serde_json::Value = serde_json::from_str(&json)
+        .unwrap_or_else(|_| serde_json::json!({ "keys": [] }));
+    Ok(Json(parsed))
 }
 
 // --- Auth ---
 
-#[derive(Deserialize)] struct LoginBody { email: String, password: String }
-#[derive(Serialize)]   struct TokenResp { access_token: String, refresh_token: String, access_ttl_s: u32 }
+#[derive(Deserialize)]
+struct LoginBody {
+    /// Tenant ID (ULID). For now, the frontend must supply it; eventually
+    /// resolved server-side from the email domain.
+    tenant_id: String,
+    email: String,
+    password: String,
+}
 
-async fn auth_login(State(_s): State<Arc<AppState>>, Json(_body): Json<LoginBody>)
-    -> Result<Json<TokenResp>, ApiError>
-{
-    // delegates to auth-service via tonic client; stubbed here.
-    Ok(Json(TokenResp { access_token: String::new(), refresh_token: String::new(), access_ttl_s: 900 }))
+#[derive(Serialize)]
+struct TokenResp {
+    access_token: String,
+    refresh_token: String,
+    access_ttl_s: u32,
+    refresh_ttl_s: u32,
+}
+
+async fn auth_login(
+    State(s): State<Arc<AppState>>,
+    Json(body): Json<LoginBody>,
+) -> Result<Json<TokenResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client
+        .issue_tokens(pb::IssueTokensRequest {
+            context: Some(pb::RequestContext {
+                tenant_id: body.tenant_id,
+                ..Default::default()
+            }),
+            primary: Some(pb::issue_tokens_request::Primary::Password(pb::PasswordCreds {
+                email: body.email,
+                password: body.password,
+            })),
+        })
+        .await
+        .map_err(map_grpc)?;
+    let p = resp.into_inner();
+    Ok(Json(TokenResp {
+        access_token: p.access_token,
+        refresh_token: p.refresh_token,
+        access_ttl_s: p.access_ttl_s,
+        refresh_ttl_s: p.refresh_ttl_s,
+    }))
 }
 
 #[derive(Deserialize)] struct RefreshBody { refresh_token: String }
-async fn auth_refresh(State(_s): State<Arc<AppState>>, Json(_body): Json<RefreshBody>)
-    -> Result<Json<TokenResp>, ApiError>
-{
-    Ok(Json(TokenResp { access_token: String::new(), refresh_token: String::new(), access_ttl_s: 900 }))
+
+async fn auth_refresh(
+    State(s): State<Arc<AppState>>,
+    Json(body): Json<RefreshBody>,
+) -> Result<Json<TokenResp>, ApiError> {
+    let mut client = require_auth_client(&s)?;
+    let resp = client
+        .refresh(pb::RefreshRequest {
+            context: None,
+            refresh_token: body.refresh_token,
+        })
+        .await
+        .map_err(map_grpc)?;
+    let p = resp.into_inner();
+    Ok(Json(TokenResp {
+        access_token: p.access_token,
+        refresh_token: p.refresh_token,
+        access_ttl_s: p.access_ttl_s,
+        refresh_ttl_s: p.refresh_ttl_s,
+    }))
 }
 
 #[derive(Deserialize, Default)]
@@ -303,22 +387,270 @@ fn fmt_ts(ts: prost_types::Timestamp) -> String {
 
 // --- AI ---
 
-#[derive(Serialize)] struct AgentDto { id: String, name: String, model: String }
-async fn ai_agents_list(State(_s): State<Arc<AppState>>) -> Result<Json<Vec<AgentDto>>, ApiError> { Ok(Json(vec![])) }
-async fn ai_agents_create(State(_s): State<Arc<AppState>>, Json(_v): Json<serde_json::Value>) -> Result<Json<AgentDto>, ApiError> {
-    Ok(Json(AgentDto { id: "".into(), name: "".into(), model: "".into() }))
+#[derive(Serialize)]
+struct AgentDto {
+    id: String,
+    tenant_id: String,
+    name: String,
+    model: String,
+    system_prompt: String,
+    tool_ids: Vec<String>,
 }
-async fn ai_run_start(State(_s): State<Arc<AppState>>, Path(_id): Path<String>, Json(_v): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, ApiError> {
-    Ok(Json(serde_json::json!({ "run_id": "" })))
+
+impl From<pb::Agent> for AgentDto {
+    fn from(a: pb::Agent) -> Self {
+        Self { id: a.id, tenant_id: a.tenant_id, name: a.name, model: a.model, system_prompt: a.system_prompt, tool_ids: a.tool_ids }
+    }
 }
+
+#[derive(Serialize)] struct AgentListResp { items: Vec<AgentDto>, next_cursor: Option<String> }
+
+async fn ai_agents_list(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Query(q): Query<PageRequest>,
+) -> Result<Json<AgentListResp>, ApiError> {
+    let mut client = require_ai_client(&s)?;
+    let resp = client.list_agents(pb::ListAgentsRequest {
+        context: Some(ctx_from(&claims)),
+        page: Some(pb::PageRequest { cursor: q.cursor.clone().unwrap_or_default(), limit: q.capped_limit() }),
+    }).await.map_err(map_grpc)?;
+    let inner = resp.into_inner();
+    Ok(Json(AgentListResp {
+        items: inner.items.into_iter().map(AgentDto::from).collect(),
+        next_cursor: if inner.next_cursor.is_empty() { None } else { Some(inner.next_cursor) },
+    }))
+}
+
+#[derive(Deserialize)]
+struct CreateAgentBody {
+    name: String,
+    model: String,
+    #[serde(default)] system_prompt: String,
+    #[serde(default)] tool_ids: Vec<String>,
+}
+
+async fn ai_agents_create(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<CreateAgentBody>,
+) -> Result<Json<AgentDto>, ApiError> {
+    let mut client = require_ai_client(&s)?;
+    let resp = client.create_agent(pb::CreateAgentRequest {
+        context: Some(ctx_from(&claims)),
+        name: body.name,
+        model: body.model,
+        system_prompt: body.system_prompt,
+        tool_ids: body.tool_ids,
+    }).await.map_err(map_grpc)?;
+    Ok(Json(AgentDto::from(resp.into_inner())))
+}
+
+#[derive(Deserialize)]
+struct StartRunBody {
+    user_input: String,
+    #[serde(default)] variables: std::collections::HashMap<String, String>,
+}
+
+#[derive(Serialize)] struct RunDto { id: String, agent_id: String, status: String }
+
+async fn ai_run_start(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Path(agent_id): Path<String>,
+    Json(body): Json<StartRunBody>,
+) -> Result<Json<RunDto>, ApiError> {
+    let mut client = require_ai_client(&s)?;
+    let resp = client.start_run(pb::StartRunRequest {
+        context: Some(ctx_from(&claims)),
+        agent_id,
+        user_input: body.user_input,
+        budget: None,
+        variables: body.variables,
+    }).await.map_err(map_grpc)?;
+    let r = resp.into_inner();
+    Ok(Json(RunDto { id: r.id, agent_id: r.agent_id, status: r.status }))
+}
+
 async fn ai_run_stream(State(_s): State<Arc<AppState>>, Path(_id): Path<String>) -> Result<Json<serde_json::Value>, ApiError> {
-    // production: returns an SSE stream proxied from ai-orchestrator's StreamRun.
-    Ok(Json(serde_json::json!({ "stream": "use SSE" })))
+    // Production: SSE stream proxied from ai-orchestrator's StreamRun.
+    // The current gRPC server returns an empty stream; once it produces RunDelta
+    // frames, this handler should convert them into Server-Sent Events.
+    Err(Error::UpstreamUnavailable("SSE streaming not yet wired").into())
 }
 
 // --- Workflow ---
 
-async fn wf_list  (State(_s): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!({"items": []}))) }
-async fn wf_create(State(_s): State<Arc<AppState>>, Json(_v): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!({"id": ""}))) }
-async fn wf_start (State(_s): State<Arc<AppState>>, Path(_id): Path<String>, Json(_v): Json<serde_json::Value>) -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!({"instance_id": ""}))) }
-async fn wf_get   (State(_s): State<Arc<AppState>>, Path(_id): Path<String>) -> Result<Json<serde_json::Value>, ApiError> { Ok(Json(serde_json::json!({}))) }
+#[derive(Serialize)]
+struct DefinitionDto {
+    id: String,
+    tenant_id: String,
+    name: String,
+    version: u32,
+}
+
+impl From<pb::Definition> for DefinitionDto {
+    fn from(d: pb::Definition) -> Self {
+        Self { id: d.id, tenant_id: d.tenant_id, name: d.name, version: d.version }
+    }
+}
+
+#[derive(Serialize)] struct InstanceDto { id: String, definition_id: String, status: String }
+
+impl From<pb::Instance> for InstanceDto {
+    fn from(i: pb::Instance) -> Self {
+        Self { id: i.id, definition_id: i.definition_id, status: i.status }
+    }
+}
+
+#[derive(Serialize)] struct InstanceListResp { items: Vec<InstanceDto>, next_cursor: Option<String> }
+
+#[derive(Deserialize)]
+struct InstancesListQuery {
+    #[serde(default)] cursor: Option<String>,
+    #[serde(default)] limit: Option<u32>,
+    #[serde(default)] status: Option<String>,
+}
+
+async fn wf_list(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Query(q): Query<InstancesListQuery>,
+) -> Result<Json<InstanceListResp>, ApiError> {
+    let mut client = require_workflow_client(&s)?;
+    let resp = client.list_instances(pb::ListInstancesRequest {
+        context: Some(ctx_from(&claims)),
+        page: Some(pb::PageRequest { cursor: q.cursor.unwrap_or_default(), limit: q.limit.unwrap_or(50) }),
+        status: q.status.unwrap_or_default(),
+    }).await.map_err(map_grpc)?;
+    let inner = resp.into_inner();
+    Ok(Json(InstanceListResp {
+        items: inner.items.into_iter().map(InstanceDto::from).collect(),
+        next_cursor: if inner.next_cursor.is_empty() { None } else { Some(inner.next_cursor) },
+    }))
+}
+
+#[derive(Deserialize)]
+struct CreateDefinitionBody { name: String, spec_json: String }
+
+async fn wf_create(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<CreateDefinitionBody>,
+) -> Result<Json<DefinitionDto>, ApiError> {
+    let mut client = require_workflow_client(&s)?;
+    let resp = client.create_definition(pb::CreateDefinitionRequest {
+        context: Some(ctx_from(&claims)),
+        name: body.name,
+        spec_json: body.spec_json,
+    }).await.map_err(map_grpc)?;
+    Ok(Json(DefinitionDto::from(resp.into_inner())))
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct StartInstanceBody {
+    variables_json: String,
+    idempotency_key: String,
+}
+
+async fn wf_start(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Path(definition_id): Path<String>,
+    body: Option<Json<StartInstanceBody>>,
+) -> Result<Json<InstanceDto>, ApiError> {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let mut client = require_workflow_client(&s)?;
+    let resp = client.start_instance(pb::StartInstanceRequest {
+        context: Some(ctx_from(&claims)),
+        definition_id,
+        variables_json: body.variables_json,
+        idempotency_key: body.idempotency_key,
+    }).await.map_err(map_grpc)?;
+    Ok(Json(InstanceDto::from(resp.into_inner())))
+}
+
+async fn wf_get(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Path(instance_id): Path<String>,
+) -> Result<Json<InstanceDto>, ApiError> {
+    let mut client = require_workflow_client(&s)?;
+    let resp = client.get_instance(pb::GetInstanceRequest {
+        context: Some(ctx_from(&claims)),
+        instance_id,
+    }).await.map_err(map_grpc)?;
+    Ok(Json(InstanceDto::from(resp.into_inner())))
+}
+
+// --- Notifications ---
+
+#[derive(Serialize)] struct ChannelDto { id: String, kind: String, enabled: bool }
+
+#[derive(Serialize)] struct ChannelListResp { items: Vec<ChannelDto>, next_cursor: Option<String> }
+
+async fn notif_channels(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    Query(q): Query<PageRequest>,
+) -> Result<Json<ChannelListResp>, ApiError> {
+    let mut client = require_notify_client(&s)?;
+    let resp = client.list_channels(pb::ListChannelsRequest {
+        context: Some(ctx_from(&claims)),
+        page: Some(pb::PageRequest { cursor: q.cursor.clone().unwrap_or_default(), limit: q.capped_limit() }),
+    }).await.map_err(map_grpc)?;
+    let inner = resp.into_inner();
+    Ok(Json(ChannelListResp {
+        items: inner.items.into_iter().map(|c| ChannelDto { id: c.id, kind: c.kind, enabled: c.enabled }).collect(),
+        next_cursor: if inner.next_cursor.is_empty() { None } else { Some(inner.next_cursor) },
+    }))
+}
+
+// --- Dashboard overview ---
+
+#[derive(Serialize)]
+struct OverviewResp {
+    devices_total: u32,
+    devices_online: u32,
+    workflows_total: u32,
+}
+
+/// Aggregate cheap counts for the dashboard. Each source is best-effort:
+/// a 502 from one upstream still returns the rest with zeros.
+async fn stats_overview(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<OverviewResp>, ApiError> {
+    let ctx = ctx_from(&claims);
+    let (devices, online, workflows) = tokio::join!(
+        count_devices(&s, ctx.clone(), None),
+        count_devices(&s, ctx.clone(), Some("online")),
+        count_workflows(&s, ctx),
+    );
+    Ok(Json(OverviewResp {
+        devices_total: devices.unwrap_or(0),
+        devices_online: online.unwrap_or(0),
+        workflows_total: workflows.unwrap_or(0),
+    }))
+}
+
+async fn count_devices(s: &AppState, ctx: pb::RequestContext, status: Option<&str>) -> Option<u32> {
+    let mut client = s.device_client.clone()?;
+    let resp = client.list_devices(pb::ListDevicesRequest {
+        context: Some(ctx),
+        page: Some(pb::PageRequest { cursor: String::new(), limit: 500 }),
+        status: status.unwrap_or("").to_owned(),
+    }).await.ok()?;
+    Some(resp.into_inner().items.len() as u32)
+}
+
+async fn count_workflows(s: &AppState, ctx: pb::RequestContext) -> Option<u32> {
+    let mut client = s.workflow_client.clone()?;
+    let resp = client.list_instances(pb::ListInstancesRequest {
+        context: Some(ctx),
+        page: Some(pb::PageRequest { cursor: String::new(), limit: 500 }),
+        status: String::new(),
+    }).await.ok()?;
+    Some(resp.into_inner().items.len() as u32)
+}

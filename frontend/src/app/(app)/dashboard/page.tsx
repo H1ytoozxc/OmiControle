@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Cpu, Bot, Workflow, Terminal, Plus, ArrowRight } from "lucide-react";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody,
@@ -7,11 +8,32 @@ import {
 } from "@/components/primitives";
 import { ActivityFeed } from "@/components/widgets/ActivityFeed";
 import { useT } from "@/lib/i18n";
+import { api } from "@/lib/api/client";
+
+interface OverviewStats {
+  devices_total: number;
+  devices_online: number;
+  workflows_total: number;
+}
 
 export default function DashboardPage() {
   const t = useT().dashboard;
   const QUICK_ICONS = [Cpu, Workflow, Bot, Terminal];
   const QUICK_HREFS = ["/devices", "/workflows", "/ai", "#"];
+
+  const stats = useQuery({
+    queryKey: ["stats", "overview"],
+    queryFn: () => api<OverviewStats>("/v1/stats/overview"),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+
+  const kpiValues = [
+    stats.data ? `${stats.data.devices_online}/${stats.data.devices_total}` : "—",
+    "—",
+    stats.data ? String(stats.data.workflows_total) : "—",
+    "—",
+  ];
 
   return (
     <div className="space-y-6">
@@ -36,11 +58,11 @@ export default function DashboardPage() {
 
       {/* kpi row */}
       <div className="grid grid-cols-4 gap-4 fade-up" style={{ ["--d" as never]: "60ms" }}>
-        {t.kpis.map((s) => (
+        {t.kpis.map((s, i) => (
           <Plate key={s.label}>
             <PlateBody className="space-y-1">
               <p className="eyebrow">{s.label}</p>
-              <p className="text-[28px] font-semibold text-bone leading-none tabular-nums">—</p>
+              <p className="text-[28px] font-semibold text-bone leading-none tabular-nums">{kpiValues[i]}</p>
               <p className="text-[11px] font-mono text-bone-dim">{s.hint}</p>
             </PlateBody>
           </Plate>

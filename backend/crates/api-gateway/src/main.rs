@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
     })
     .context("loading gateway config")?;
 
-    let _telemetry = sequoia_telemetry::init(sequoia_telemetry::TelemetryConfig {
+    let telemetry = sequoia_telemetry::init(sequoia_telemetry::TelemetryConfig {
         service_name: "api-gateway".into(),
         service_namespace: "sequoia".into(),
         otlp_endpoint: cfg.otlp_endpoint.clone(),
@@ -48,7 +48,9 @@ async fn main() -> anyhow::Result<()> {
     })
     .context("telemetry init")?;
 
-    let state = Arc::new(AppState::build(&cfg).await?);
+    let prom = telemetry.prometheus.clone();
+    let state = Arc::new(AppState::build(&cfg, prom).await?);
+    let _telemetry = telemetry;
 
     let app = routes::build_router(state.clone())
         .layer(

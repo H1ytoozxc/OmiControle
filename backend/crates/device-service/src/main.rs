@@ -12,7 +12,7 @@ mod registry;
 mod grpc;
 
 use anyhow::{anyhow, Context};
-use sequoia_auth::Issuer;
+use sequoia_auth::{Issuer, LocalVerifier};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
@@ -40,16 +40,24 @@ async fn main() -> anyhow::Result<()> {
     let pool = sequoia_db::init_pool(&cfg.database).await?;
     let registry = Arc::new(ChannelRegistry::default());
 
-    let device_jwt_pem = sequoia_config::resolve_secret(&cfg.device_jwt.private_key_pem)
+    let device_priv_pem = sequoia_config::resolve_secret(&cfg.device_jwt.private_key_pem)
         .context("resolve device_jwt.private_key_pem")?;
-    let jwt_issuer = Issuer::from_es256_pem(cfg.device_jwt.kid.clone(), device_jwt_pem.as_bytes())
+    let device_pub_pem = sequoia_config::resolve_secret(&cfg.device_jwt.public_key_pem)
+        .context("resolve device_jwt.public_key_pem")?;
+    let jwt_issuer = Issuer::from_es256_pem(cfg.device_jwt.kid.clone(), device_priv_pem.as_bytes())
         .map_err(|e| anyhow!("device jwt issuer: {e}"))?;
+    let jwt_verifier = LocalVerifier::from_es256_pem(
+        device_pub_pem.as_bytes(),
+        cfg.device_jwt.issuer.clone(),
+        cfg.device_jwt.audience.clone(),
+    ).map_err(|e| anyhow!("device jwt verifier: {e}"))?;
 
     let svc = grpc::DeviceGrpc {
         pool,
         registry: registry.clone(),
         cfg: Arc::new(cfg.clone()),
         jwt_issuer,
+        jwt_verifier,
     };
 
     let addr: SocketAddr = cfg.grpc_bind.parse().context("bind")?;

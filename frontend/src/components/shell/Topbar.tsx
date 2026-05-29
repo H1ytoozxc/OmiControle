@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Button, Kbd } from "@/components/primitives";
 import { useCommandPalette } from "./CommandPalette";
 import { useLang, useT } from "@/lib/i18n";
+import { useSession } from "@/lib/auth/session";
 
 export function Topbar() {
   const path = usePathname();
@@ -40,18 +41,22 @@ export function Topbar() {
 
   async function signOut() {
     setMenuOpen(false);
-    // Best-effort server-side revocation; we still navigate to /login even if
-    // the call fails, since the local session is gone either way.
+    const { refreshToken, clearSession } = useSession.getState();
+    // Best-effort server-side revocation. We always clear the local session
+    // and navigate to /login even if the call fails — the local credential
+    // is gone either way and the server-side token will expire on its own.
     try {
-      await fetch("/api/auth/logout", {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+      await fetch(`${apiUrl}/v1/auth/logout`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ refresh_token: refreshToken ?? "" }),
       });
     } catch {
       // ignored — UI flow continues
     }
+    clearSession();
     router.push("/login");
   }
 

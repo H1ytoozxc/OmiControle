@@ -46,6 +46,9 @@ fn default_true() -> bool { true }
 
 pub struct TelemetryGuard {
     _tracer: TracerProvider,
+    /// Handle to the Prometheus recorder when `enable_prometheus` is true.
+    /// Services that want to expose `/metrics` call `render()` on this.
+    pub prometheus: Option<metrics_exporter_prometheus::PrometheusHandle>,
 }
 
 impl Drop for TelemetryGuard {
@@ -105,12 +108,14 @@ pub fn init(cfg: TelemetryConfig) -> Result<TelemetryGuard, TelemetryError> {
         .try_init()
         .map_err(|e| TelemetryError::Init(format!("subscriber: {e}")))?;
 
-    if cfg.enable_prometheus {
-        let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
-        builder
-            .install()
+    let prometheus = if cfg.enable_prometheus {
+        let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+            .install_recorder()
             .map_err(|e| TelemetryError::Init(format!("prom: {e}")))?;
-    }
+        Some(handle)
+    } else {
+        None
+    };
 
-    Ok(TelemetryGuard { _tracer: tracer_provider })
+    Ok(TelemetryGuard { _tracer: tracer_provider, prometheus })
 }

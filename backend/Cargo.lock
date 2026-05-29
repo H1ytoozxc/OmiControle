@@ -4189,6 +4189,7 @@ dependencies = [
  "axum-extra",
  "governor",
  "hyper 1.10.0",
+ "metrics-exporter-prometheus",
  "moka",
  "parking_lot",
  "prost",

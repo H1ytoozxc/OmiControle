@@ -9,8 +9,14 @@ import * as React from "react";
 import { RealtimeBoundary } from "@/lib/ws/RealtimeBoundary";
 import { CommandPaletteProvider } from "@/components/shell/CommandPalette";
 import { LanguageProvider } from "@/lib/i18n";
+import { useSession } from "@/lib/auth/session";
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  // Hydrate token store from localStorage once on mount.
+  React.useEffect(() => {
+    useSession.getState().hydrate();
+  }, []);
+
   const [client] = React.useState(
     () =>
       new QueryClient({

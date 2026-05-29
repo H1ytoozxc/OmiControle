@@ -41,6 +41,12 @@ pub struct AuthConfig {
     pub issuer: String,
     pub jwks_url: String,
     pub audience: String,
+    /// Optional PEM source (`file://` or `env://`) for the auth-service's
+    /// public signing key. When set, the gateway verifies access tokens
+    /// locally and skips the JWKS HTTP fetch. Recommended for v0.1 deploys
+    /// where there's no key rotation yet.
+    #[serde(default)]
+    pub local_public_key_pem: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

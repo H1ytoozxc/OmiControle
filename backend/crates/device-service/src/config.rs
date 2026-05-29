@@ -27,6 +27,9 @@ pub struct DeviceJwtConfig {
     pub kid: String,
     /// `file://path` or `env://VAR` — resolved via sequoia_config::resolve_secret.
     pub private_key_pem: String,
+    /// Public key in PEM form (same source format as private_key_pem). Used by
+    /// the LocalVerifier on the Channel RPC to validate incoming device JWTs.
+    pub public_key_pem: String,
     #[serde(default = "default_device_jwt_ttl")]
     pub ttl_s: i64,
 }
