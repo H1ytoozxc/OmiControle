@@ -5,44 +5,48 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutGrid, Cpu, Bot, Workflow, Bell, Users, SlidersHorizontal,
-  Terminal, ShieldCheck, Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SignalDot } from "@/components/primitives";
+import { useT } from "@/lib/i18n";
 
-const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+type NavKey = "overview" | "devices" | "aiControl" | "workflows" | "notifications" | "identity" | "settings";
+type GroupKey = "workspace" | "operations" | "system";
+
+type NavItem = {
+  href: string;
+  key: NavKey;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+};
+
+const NAV_GROUPS: { groupKey: GroupKey; items: NavItem[] }[] = [
   {
-    label: "Workspace",
+    groupKey: "workspace",
     items: [
-      { href: "/dashboard",     label: "Overview",    icon: LayoutGrid },
-      { href: "/devices",       label: "Devices",     icon: Cpu },
-      { href: "/ai",            label: "AI Control",  icon: Bot },
-      { href: "/workflows",     label: "Workflows",   icon: Workflow },
+      { href: "/dashboard",     key: "overview",       icon: LayoutGrid },
+      { href: "/devices",       key: "devices",        icon: Cpu },
+      { href: "/ai",            key: "aiControl",      icon: Bot },
+      { href: "/workflows",     key: "workflows",      icon: Workflow },
     ],
   },
   {
-    label: "Operations",
+    groupKey: "operations",
     items: [
-      { href: "/notifications", label: "Notifications", icon: Bell },
-      { href: "/users",         label: "Identity",      icon: Users },
+      { href: "/notifications", key: "notifications",  icon: Bell },
+      { href: "/users",         key: "identity",       icon: Users },
     ],
   },
   {
-    label: "System",
+    groupKey: "system",
     items: [
-      { href: "/settings",  label: "Settings", icon: SlidersHorizontal },
+      { href: "/settings",      key: "settings",       icon: SlidersHorizontal },
     ],
   },
 ];
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-};
-
 export function Sidebar() {
   const pathname = usePathname();
+  const t = useT();
 
   return (
     <aside
@@ -62,8 +66,8 @@ export function Sidebar() {
       {/* nav groups */}
       <nav className="flex-1 px-3 pb-3 overflow-y-auto">
         {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mb-5">
-            <div className="eyebrow px-2 mb-1.5">{group.label}</div>
+          <div key={group.groupKey} className="mb-5">
+            <div className="eyebrow px-2 mb-1.5">{t.nav[group.groupKey]}</div>
             <ul className="flex flex-col gap-px">
               {group.items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -86,7 +90,7 @@ export function Sidebar() {
                         />
                       )}
                       <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-                      <span className="truncate">{item.label}</span>
+                      <span className="truncate">{t.nav[item.key]}</span>
                     </Link>
                   </li>
                 );
@@ -96,11 +100,11 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* bottom strip — connection status only */}
+      {/* bottom strip */}
       <div className="px-3 py-3 border-t border-white/[0.06]">
         <div className="flex items-center gap-2 text-[11px] font-mono text-bone-dim">
           <SignalDot state="ok" />
-          <span>Connected</span>
+          <span>{t.nav.connected}</span>
         </div>
       </div>
     </aside>

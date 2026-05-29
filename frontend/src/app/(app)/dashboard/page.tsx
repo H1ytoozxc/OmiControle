@@ -1,44 +1,46 @@
+"use client";
+
 import { Cpu, Bot, Workflow, Terminal, Plus, ArrowRight } from "lucide-react";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody,
   Button, Badge, SignalDot,
 } from "@/components/primitives";
 import { ActivityFeed } from "@/components/widgets/ActivityFeed";
+import { useT } from "@/lib/i18n";
 
 export default function DashboardPage() {
+  const t = useT().dashboard;
+  const QUICK_ICONS = [Cpu, Workflow, Bot, Terminal];
+  const QUICK_HREFS = ["/devices", "/workflows", "/ai", "#"];
+
   return (
     <div className="space-y-6">
       {/* header */}
       <section className="fade-up">
-        <p className="eyebrow mb-3">Overview</p>
+        <p className="eyebrow mb-3">{t.eyebrow}</p>
         <h1 className="text-[36px] font-semibold leading-tight text-bone tracking-tight">
-          Fleet control plane
+          {t.title}
         </h1>
         <p className="text-[13.5px] text-bone-muted mt-1.5 max-w-[480px] leading-relaxed">
-          Enroll your first device to start monitoring. Devices, workflows, and agents appear here in real time.
+          {t.subtitle}
         </p>
         <div className="flex gap-2 mt-5">
           <Button variant="ember" size="lg">
-            <Plus className="w-4 h-4" strokeWidth={1.8} />Enroll device
+            <Plus className="w-4 h-4" strokeWidth={1.8} />{t.enrollDevice}
           </Button>
           <Button variant="outline" size="lg">
-            <Bot className="w-4 h-4" strokeWidth={1.8} />Launch agent
+            <Bot className="w-4 h-4" strokeWidth={1.8} />{t.launchAgent}
           </Button>
         </div>
       </section>
 
-      {/* kpi row — empty state */}
+      {/* kpi row */}
       <div className="grid grid-cols-4 gap-4 fade-up" style={{ ["--d" as never]: "60ms" }}>
-        {[
-          { label: "Devices online",    value: "—", hint: "No devices enrolled" },
-          { label: "Realtime latency",  value: "—", hint: "Awaiting connection" },
-          { label: "Workflows / hr",    value: "—", hint: "No workflows defined" },
-          { label: "Commands / hr",     value: "—", hint: "No commands issued" },
-        ].map((s) => (
+        {t.kpis.map((s) => (
           <Plate key={s.label}>
             <PlateBody className="space-y-1">
               <p className="eyebrow">{s.label}</p>
-              <p className="text-[28px] font-semibold text-bone leading-none tabular-nums">{s.value}</p>
+              <p className="text-[28px] font-semibold text-bone leading-none tabular-nums">—</p>
               <p className="text-[11px] font-mono text-bone-dim">{s.hint}</p>
             </PlateBody>
           </Plate>
@@ -50,7 +52,7 @@ export default function DashboardPage() {
         {/* activity */}
         <Plate className="col-span-8 fade-up" style={{ ["--d" as never]: "120ms" }}>
           <PlateHeader>
-            <PlateTitle label="Activity" live ts="LIVE" />
+            <PlateTitle label={t.activityTitle} live ts="LIVE" />
           </PlateHeader>
           <PlateBody>
             <ActivityFeed />
@@ -60,19 +62,14 @@ export default function DashboardPage() {
         {/* quick actions */}
         <div className="col-span-4 flex flex-col gap-4 fade-up" style={{ ["--d" as never]: "160ms" }}>
           <Plate>
-            <PlateHeader><PlateTitle label="Quick start" /></PlateHeader>
+            <PlateHeader><PlateTitle label={t.quickStart} /></PlateHeader>
             <PlateBody className="space-y-2">
-              {[
-                { icon: Cpu,      label: "Enroll a device",    href: "/devices",   hint: "Install the agent on any host" },
-                { icon: Workflow, label: "Create a workflow",  href: "/workflows", hint: "Automate device operations" },
-                { icon: Bot,      label: "Configure an agent", href: "/ai",        hint: "AI-powered anomaly response" },
-                { icon: Terminal, label: "Open console",       href: "#",          hint: "Run commands on your fleet" },
-              ].map((item) => {
-                const Icon = item.icon;
+              {t.quickLinks.map((item, idx) => {
+                const Icon = QUICK_ICONS[idx];
                 return (
                   <a
                     key={item.label}
-                    href={item.href}
+                    href={QUICK_HREFS[idx]}
                     className="flex items-center gap-3 p-2.5 rounded-sm border border-white/[0.06] bg-ink-50/40 hover:bg-ink-100/60 hover:border-white/[0.10] transition-colors group"
                   >
                     <span className="w-7 h-7 rounded-sm bg-ink-100 border border-white/[0.08] grid place-items-center group-hover:border-ember/30 transition-colors">
@@ -90,20 +87,15 @@ export default function DashboardPage() {
           </Plate>
 
           <Plate>
-            <PlateHeader><PlateTitle label="System status" /></PlateHeader>
+            <PlateHeader><PlateTitle label={t.systemStatus} /></PlateHeader>
             <PlateBody className="space-y-2">
-              {[
-                { label: "API gateway",       state: "ok"   as const },
-                { label: "Database",          state: "ok"   as const },
-                { label: "Realtime gateway",  state: "ok"   as const },
-                { label: "Workflow workers",  state: "ok"   as const },
-              ].map((row) => (
-                <div key={row.label} className="flex items-center justify-between text-[12px]">
+              {t.systemRows.map((label) => (
+                <div key={label} className="flex items-center justify-between text-[12px]">
                   <span className="flex items-center gap-2 text-bone-muted">
-                    <SignalDot state={row.state} />
-                    {row.label}
+                    <SignalDot state="ok" />
+                    {label}
                   </span>
-                  <Badge size="xs" tone="mint">operational</Badge>
+                  <Badge size="xs" tone="mint">{t.operational}</Badge>
                 </div>
               ))}
             </PlateBody>

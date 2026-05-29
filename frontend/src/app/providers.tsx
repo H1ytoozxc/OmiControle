@@ -8,6 +8,7 @@ import * as React from "react";
 
 import { RealtimeBoundary } from "@/lib/ws/RealtimeBoundary";
 import { CommandPaletteProvider } from "@/components/shell/CommandPalette";
+import { LanguageProvider } from "@/lib/i18n";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = React.useState(
@@ -31,6 +32,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={client}>
+      <LanguageProvider>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
         <RealtimeBoundary>
           <CommandPaletteProvider>
@@ -49,6 +51,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           </CommandPaletteProvider>
         </RealtimeBoundary>
       </ThemeProvider>
+      </LanguageProvider>
       {process.env.NODE_ENV === "development" && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   );

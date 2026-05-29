@@ -4,9 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import { Fingerprint, Github, Mail, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/primitives";
+import { useT, useLang } from "@/lib/i18n";
 
 export default function LoginPage() {
   const [showPw, setShowPw] = React.useState(false);
+  const t = useT().login;
+  const { lang, toggle } = useLang();
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-ink">
@@ -19,10 +22,10 @@ export default function LoginPage() {
 
         <div>
           <h1 className="text-[52px] font-semibold leading-[1.05] text-bone tracking-tight max-w-[420px]">
-            One control plane for your entire fleet.
+            {t.headline}
           </h1>
           <p className="text-[14px] text-bone-muted mt-4 max-w-[380px] leading-relaxed">
-            Devices, AI agents, workflows, and telemetry — all in one place. Enroll your first device in minutes.
+            {t.subline}
           </p>
         </div>
 
@@ -34,17 +37,23 @@ export default function LoginPage() {
       {/* right: form */}
       <main className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-[380px] space-y-6 fade-up">
-          {/* mobile logo */}
-          <div className="lg:hidden flex items-center gap-2 mb-2">
-            <span className="text-[18px] font-semibold text-bone">Sequoia</span>
+          {/* mobile logo + lang toggle */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[18px] font-semibold text-bone lg:hidden">Sequoia</span>
+            <button
+              onClick={toggle}
+              className="ml-auto h-6 px-2 rounded-sm border border-white/[0.08] text-[10px] font-mono text-bone-dim hover:text-bone hover:border-white/[0.20] transition-colors"
+            >
+              {lang === "en" ? "RU" : "EN"}
+            </button>
           </div>
 
           <div>
-            <h2 className="text-[24px] font-semibold text-bone tracking-tight">Sign in</h2>
+            <h2 className="text-[24px] font-semibold text-bone tracking-tight">{t.title}</h2>
             <p className="text-[13px] text-bone-muted mt-1">
-              New here?{" "}
+              {t.newHere}{" "}
               <Link href="/register" className="text-ember hover:text-ember-50 transition-colors">
-                Create an account
+                {t.createAccount}
               </Link>
             </p>
           </div>
@@ -54,21 +63,21 @@ export default function LoginPage() {
             <Button variant="plate" size="lg" className="w-full justify-between">
               <span className="flex items-center gap-2.5">
                 <Github className="w-4 h-4" strokeWidth={1.6} />
-                Continue with GitHub
+                {t.continueGitHub}
               </span>
               <ArrowRight className="w-3.5 h-3.5 text-bone-dim" strokeWidth={1.6} />
             </Button>
             <Button variant="plate" size="lg" className="w-full justify-between">
               <span className="flex items-center gap-2.5">
                 <Mail className="w-4 h-4" strokeWidth={1.6} />
-                Continue with Google
+                {t.continueGoogle}
               </span>
               <ArrowRight className="w-3.5 h-3.5 text-bone-dim" strokeWidth={1.6} />
             </Button>
             <Button variant="outline" size="lg" className="w-full justify-between">
               <span className="flex items-center gap-2.5">
                 <Fingerprint className="w-4 h-4" strokeWidth={1.6} />
-                Use a passkey
+                {t.usePasskey}
               </span>
               <ArrowRight className="w-3.5 h-3.5 text-bone-dim" strokeWidth={1.6} />
             </Button>
@@ -83,7 +92,7 @@ export default function LoginPage() {
           {/* email/password */}
           <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
             <label className="flex flex-col gap-1.5">
-              <span className="eyebrow">Email</span>
+              <span className="eyebrow">{t.email}</span>
               <input
                 type="email"
                 autoComplete="email"
@@ -94,7 +103,7 @@ export default function LoginPage() {
             </label>
 
             <label className="flex flex-col gap-1.5">
-              <span className="eyebrow">Password</span>
+              <span className="eyebrow">{t.password}</span>
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}
@@ -116,12 +125,12 @@ export default function LoginPage() {
 
             <div className="flex justify-end">
               <Link href="/forgot-password" className="text-[11.5px] font-mono text-bone-dim hover:text-bone-muted transition-colors">
-                Forgot password?
+                {t.forgotPassword}
               </Link>
             </div>
 
             <Button type="submit" variant="ember" size="lg" className="w-full mt-1">
-              Sign in
+              {t.signIn}
             </Button>
           </form>
         </div>

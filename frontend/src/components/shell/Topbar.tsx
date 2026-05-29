@@ -5,20 +5,15 @@ import { Search, Sparkles, Bell, ChevronRight } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Button, Kbd } from "@/components/primitives";
 import { useCommandPalette } from "./CommandPalette";
+import { useLang, useT } from "@/lib/i18n";
 
-/**
- * Topbar — instrument-panel breadcrumb + global controls.
- *
- * Includes the always-visible time-stamped breadcrumb, an "Ask Sequoia"
- * AI palette trigger (natural-language commands), search, and the user pill.
- *
- * Height: 56px. Sticky. Hairline-only bottom edge.
- */
 export function Topbar() {
   const path = usePathname();
   const segments = path.split("/").filter(Boolean);
   const cmd = useCommandPalette();
   const [now, setNow] = React.useState<string>("");
+  const { lang, toggle } = useLang();
+  const t = useT();
 
   React.useEffect(() => {
     const tick = () => setNow(new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC");
@@ -46,20 +41,29 @@ export function Topbar() {
         {/* time chip */}
         <div className="ml-auto eyebrow text-[10px] tabular-nums">{now}</div>
 
+        {/* language toggle */}
+        <button
+          onClick={toggle}
+          className="h-6 px-2 rounded-sm border border-white/[0.08] text-[10px] font-mono text-bone-dim hover:text-bone hover:border-white/[0.20] transition-colors"
+          aria-label="Toggle language"
+        >
+          {lang === "en" ? "RU" : "EN"}
+        </button>
+
         {/* search */}
         <button
           onClick={() => cmd.open()}
           className="group h-8 w-[280px] px-2.5 flex items-center gap-2 bg-ink-100/50 hover:bg-ink-100 border border-white/[0.06] rounded-sm text-left transition-colors"
         >
           <Search className="w-3.5 h-3.5 text-bone-dim group-hover:text-bone-muted" strokeWidth={1.6} />
-          <span className="text-[12.5px] text-bone-dim">Search · ask · command…</span>
+          <span className="text-[12.5px] text-bone-dim">{t.topbar.search}</span>
           <span className="ml-auto flex items-center gap-0.5"><Kbd>⌘</Kbd><Kbd>K</Kbd></span>
         </button>
 
         {/* AI quick-ask */}
         <Button size="sm" variant="ember" onClick={() => cmd.open("ai")}>
           <Sparkles className="w-3.5 h-3.5" strokeWidth={1.8} />
-          Ask Sequoia
+          {t.topbar.askSequoia}
         </Button>
 
         {/* notifications */}

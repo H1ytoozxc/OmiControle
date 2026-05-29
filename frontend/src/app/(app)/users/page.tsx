@@ -1,22 +1,25 @@
+"use client";
+
 import { Plus } from "lucide-react";
 import {
   Plate, PlateHeader, PlateTitle, PlateBody,
   Button, Badge, SignalDot,
 } from "@/components/primitives";
+import { useT } from "@/lib/i18n";
 
 export default function UsersPage() {
+  const t = useT().users;
   return (
     <div className="space-y-5">
       <header className="flex items-end justify-between gap-6 fade-up">
         <div>
           <p className="eyebrow mb-2">/ identity</p>
-          <h1 className="text-[36px] font-semibold leading-tight text-bone tracking-tight">Identity & access</h1>
-          <p className="text-[12.5px] text-bone-muted mt-1">Manage users, roles, and permissions for your organization.</p>
+          <h1 className="text-[36px] font-semibold leading-tight text-bone tracking-tight">{t.title}</h1>
+          <p className="text-[12.5px] text-bone-muted mt-1">{t.eyebrow}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">Audit log</Button>
           <Button variant="ember">
-            <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />Invite user
+            <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />{t.invite}
           </Button>
         </div>
       </header>
@@ -24,15 +27,13 @@ export default function UsersPage() {
       <div className="grid grid-cols-12 gap-5">
         <Plate className="col-span-8 fade-up" style={{ ["--d" as never]: "80ms" }}>
           <PlateHeader>
-            <PlateTitle label="Users" subtle="1 member" />
+            <PlateTitle label={t.title} subtle="1" />
           </PlateHeader>
           <PlateBody>
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <p className="text-[13px] text-bone-muted mb-4">
-                Invite teammates to collaborate on your fleet.
-              </p>
+              <p className="text-[13px] text-bone-muted mb-4">{t.emptyNote}</p>
               <Button variant="ember" size="md">
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />Invite first member
+                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />{t.invite}
               </Button>
             </div>
           </PlateBody>
@@ -60,7 +61,7 @@ export default function UsersPage() {
           </Plate>
 
           <Plate>
-            <PlateHeader><PlateTitle label="Active sessions" live ts="LIVE" /></PlateHeader>
+            <PlateHeader><PlateTitle label="Sessions" live ts="LIVE" /></PlateHeader>
             <PlateBody>
               <div className="flex items-center justify-between text-[12px]">
                 <span className="flex items-center gap-2 text-bone-muted">
