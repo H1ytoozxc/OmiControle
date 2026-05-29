@@ -16,6 +16,10 @@ Cargo.lock.bak
 *.crt
 secrets/
 
+# Dev-only generated configs (contain HMAC keys) and runtime logs/pids
+backend/config/
+backend/.dev-logs/
+
 # IDE
 .idea/
 .vscode/
