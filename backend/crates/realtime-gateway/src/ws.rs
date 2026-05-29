@@ -33,17 +33,18 @@ async fn ws_upgrade(
     if hub.online_count() >= hub.cfg.max_connections {
         return (StatusCode::SERVICE_UNAVAILABLE, "max connections").into_response();
     }
-    // TODO: validate ticket via auth-service; the ticket encodes (tenant, user, exp).
-    let (tenant_id, user_id) = match validate_ticket(&q.ticket).await {
-        Ok(v) => v,
-        Err(_) => return (StatusCode::UNAUTHORIZED, "invalid ticket").into_response(),
+    let key = match hub.ticket_key.as_ref() {
+        Some(k) => k,
+        None => return (StatusCode::SERVICE_UNAVAILABLE, "ticket auth not configured").into_response(),
     };
-    ws.on_upgrade(move |s| handle_socket(s, hub, tenant_id, user_id))
-}
-
-async fn validate_ticket(_t: &str) -> Result<(String, String), &'static str> {
-    // production: redis GETDEL of `ws:ticket:<sha256(t)>` → (tenant, user, exp).
-    Ok(("tenant-stub".into(), "user-stub".into()))
+    let verified = match sequoia_auth::ticket::verify(key, &q.ticket) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "rejected ws upgrade — bad ticket");
+            return (StatusCode::UNAUTHORIZED, "invalid ticket").into_response();
+        }
+    };
+    ws.on_upgrade(move |s| handle_socket(s, hub, verified.tenant_id, verified.user_id))
 }
 
 async fn handle_socket(socket: WebSocket, hub: Arc<Hub>, tenant_id: String, user_id: String) {

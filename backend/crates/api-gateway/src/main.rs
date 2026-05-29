@@ -15,16 +15,17 @@ mod middleware;
 mod errors;
 
 use anyhow::Context;
+use axum::http::{header, HeaderName, HeaderValue, Method};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
 use tower_http::{
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::GatewayConfig;
 use crate::state::AppState;
@@ -56,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
                 .layer(PropagateRequestIdLayer::x_request_id())
                 .layer(TraceLayer::new_for_http())
                 .layer(TimeoutLayer::new(std::time::Duration::from_secs(cfg.request_timeout_s)))
-                .layer(CorsLayer::permissive())
+                .layer(build_cors(&cfg.cors_origins))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     middleware::auth_layer,
@@ -76,6 +77,37 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("serve")?;
     Ok(())
+}
+
+fn build_cors(origins: &[String]) -> CorsLayer {
+    let base = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::PATCH, Method::OPTIONS])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            HeaderName::from_static("x-correlation-id"),
+            HeaderName::from_static("x-request-id"),
+        ])
+        .max_age(std::time::Duration::from_secs(86400));
+
+    // "*" → mirror request origin without credentials (Any).
+    // Otherwise: explicit allowlist with credentials allowed.
+    if origins.iter().any(|o| o == "*") {
+        warn!("CORS configured with wildcard origin; credentials will NOT be allowed");
+        return base.allow_origin(AllowOrigin::any());
+    }
+    let parsed: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|o| match HeaderValue::from_str(o) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                warn!(origin = %o, "skipping malformed CORS origin");
+                None
+            }
+        })
+        .collect();
+    base.allow_origin(parsed).allow_credentials(true)
 }
 
 async fn shutdown_signal() {

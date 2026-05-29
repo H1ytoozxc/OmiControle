@@ -11,6 +11,10 @@ pub struct RealtimeConfig {
     pub jwks_url: String,
     pub issuer: String,
     pub audience: String,
+    /// HMAC key (base64url) shared with api-gateway. Empty disables ticket auth
+    /// (any connection refused with 503).
+    #[serde(default)]
+    pub ws_ticket_hmac_key_b64: String,
 
     #[serde(default = "default_max_conn")]      pub max_connections: usize,
     #[serde(default = "default_heartbeat")]     pub heartbeat_interval_s: u64,

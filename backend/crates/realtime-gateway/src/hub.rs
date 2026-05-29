@@ -27,6 +27,9 @@ pub struct Conn {
 
 pub struct Hub {
     pub cfg: RealtimeConfig,
+    /// Decoded HMAC key for verifying WebSocket tickets. `None` rejects all
+    /// upgrades with 503 (no auth means no connections).
+    pub ticket_key: Option<Vec<u8>>,
     conns: DashMap<ConnId, Conn>,
     by_topic: DashMap<String, dashmap::DashSet<ConnId>>,
     bus: Arc<dyn EventBus>,
@@ -36,8 +39,16 @@ pub struct Hub {
 impl Hub {
     pub async fn new(cfg: RealtimeConfig) -> anyhow::Result<Self> {
         let bus = RedisStreamsBus::new(&cfg.redis_url)?;
+        let ticket_key = if cfg.ws_ticket_hmac_key_b64.is_empty() {
+            tracing::warn!("WS_TICKET_HMAC_KEY_B64 not set; /ws will reject all upgrades with 503");
+            None
+        } else {
+            Some(sequoia_auth::ticket::decode_key(&cfg.ws_ticket_hmac_key_b64)
+                .map_err(|e| anyhow::anyhow!("ws_ticket_hmac_key_b64: {e}"))?)
+        };
         Ok(Self {
             cfg,
+            ticket_key,
             conns: DashMap::new(),
             by_topic: DashMap::new(),
             bus: Arc::new(bus),

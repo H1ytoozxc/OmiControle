@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post, delete};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use sequoia_auth::Claims;
+use sequoia_common::error::Error;
 use sequoia_common::pagination::PageRequest;
 
 use crate::errors::ApiError;
@@ -19,8 +21,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/.well-known/jwks.json", get(jwks))
 
         // Auth
-        .route("/v1/auth/login",   post(auth_login))
-        .route("/v1/auth/refresh", post(auth_refresh))
+        .route("/v1/auth/login",     post(auth_login))
+        .route("/v1/auth/refresh",   post(auth_refresh))
+        .route("/v1/auth/ws-ticket", post(ws_ticket))
 
         // Devices
         .route("/v1/devices",                get(devices_list))
@@ -72,6 +75,28 @@ async fn auth_refresh(State(_s): State<Arc<AppState>>, Json(_body): Json<Refresh
     -> Result<Json<TokenResp>, ApiError>
 {
     Ok(Json(TokenResp { access_token: String::new(), refresh_token: String::new(), access_ttl_s: 900 }))
+}
+
+#[derive(Serialize)] struct WsTicketResp { ticket: String, expires_in_s: u32 }
+
+/// Issue a short-lived HMAC ticket bound to (tenant, user) from the caller's
+/// access JWT. The realtime-gateway verifies these on `GET /ws?ticket=...`.
+async fn ws_ticket(
+    State(s): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<WsTicketResp>, ApiError> {
+    let key = s.ws_ticket_key.as_ref()
+        .ok_or(Error::UpstreamUnavailable("ws ticket issuance not configured"))?;
+    let ticket = sequoia_auth::ticket::issue(
+        key,
+        &claims.tid,
+        &claims.sub,
+        s.cfg.ws_ticket_ttl_s as i64,
+    ).map_err(|e| Error::Internal(anyhow::anyhow!(e.to_string())))?;
+    Ok(Json(WsTicketResp {
+        ticket,
+        expires_in_s: s.cfg.ws_ticket_ttl_s,
+    }))
 }
 
 // --- Devices ---

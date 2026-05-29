@@ -10,6 +10,14 @@ pub struct GatewayConfig {
     pub otlp_endpoint: Option<String>,
     #[serde(default = "default_log_filter")]
     pub log_filter: String,
+    #[serde(default = "default_cors_origins")]
+    pub cors_origins: Vec<String>,
+    /// HMAC key for issuing WebSocket tickets. Shared with realtime-gateway.
+    /// Empty string disables ticket issuance (endpoint returns 503).
+    #[serde(default)]
+    pub ws_ticket_hmac_key_b64: String,
+    #[serde(default = "default_ws_ticket_ttl_s")]
+    pub ws_ticket_ttl_s: u32,
 
     pub upstreams: Upstreams,
     pub auth: AuthConfig,
@@ -51,3 +59,5 @@ impl Default for RateLimitConfig {
 fn default_bind() -> String { "0.0.0.0:8080".into() }
 fn default_timeout() -> u64 { 30 }
 fn default_log_filter() -> String { "info,h2=warn,hyper=warn".into() }
+fn default_cors_origins() -> Vec<String> { vec!["http://localhost:3000".into()] }
+fn default_ws_ticket_ttl_s() -> u32 { 60 }

@@ -4216,12 +4216,16 @@ name = "sequoia-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
+ "hmac",
  "jsonwebtoken",
  "moka",
+ "rand 0.8.6",
  "reqwest 0.12.28",
  "sequoia-common",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
  "time",
  "tokio",

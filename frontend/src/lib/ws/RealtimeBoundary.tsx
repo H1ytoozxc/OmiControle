@@ -23,14 +23,18 @@ export function RealtimeBoundary({ children }: { children: React.ReactNode }) {
     const client = new RealtimeClient({
       url,
       fetchTicket: async () => {
-        // POST /v1/auth/ws-ticket — exchange the access cookie for a single-use ticket.
-        try {
-          const r = await fetch("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
-          const j = await r.json();
-          return j.ticket;
-        } catch {
-          return "dev-ticket";
+        // POST /v1/auth/ws-ticket — exchange the access cookie for a short-lived
+        // HMAC ticket. Any failure propagates so the realtime client surfaces a
+        // proper disconnected state instead of silently masquerading as authed.
+        const r = await fetch("/api/auth/ws-ticket", { method: "POST", credentials: "include" });
+        if (!r.ok) {
+          throw new Error(`ws-ticket: ${r.status} ${r.statusText}`);
         }
+        const j = await r.json();
+        if (typeof j.ticket !== "string" || !j.ticket) {
+          throw new Error("ws-ticket: malformed response");
+        }
+        return j.ticket;
       },
       onStatus: (s) => setStatus(s),
     });
