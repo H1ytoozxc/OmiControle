@@ -31,6 +31,58 @@ its own asymmetric identity (Ed25519) signed by a per-tenant CA.
 
 ---
 
+## v0.1 implementation status (2026-05)
+
+This section tracks what is actually built vs. what the design describes.
+The rest of this document describes the full intended design.
+
+### Backend — what is wired
+
+| Component | Status | Notes |
+|---|---|---|
+| API Gateway (Axum, REST proxy) | ✅ | CORS allowlist, JWT verify, rate-limit headers |
+| Auth Service — login / refresh / logout | ✅ | ES256 JWT issue, rotating refresh tokens, family revocation |
+| Auth Service — JWKS endpoint | ⚠️ | Bypassed in v0.1: api-gateway uses `local_public_key_pem` directly |
+| Device Service — enrollment | ✅ | Issues real ES256 device JWT (separate keypair + audience) |
+| Device Service — bidi stream | ✅ | JWT-authenticated; `claims.kind == "device"` enforced |
+| Realtime Gateway — WS ticket auth | ✅ | HMAC-SHA256 ticket (32-byte key, 60 s TTL) |
+| Prometheus metrics endpoint | ✅ | `GET /metrics` → `PrometheusHandle.render()` |
+| AI Orchestrator | ⚠️ | Routes proxied; handlers return `unimplemented` |
+| Workflow Engine | ⚠️ | Routes proxied; handlers return `unimplemented` |
+| Notification Service | ⚠️ | Routes proxied; handlers return `unimplemented` |
+| Plugin Host / Command Executor | ❌ | Not started |
+| mTLS east-west | ❌ | Plain gRPC for now |
+| RBAC policy enforcement | ❌ | Schema exists, not wired to handlers |
+| Audit log writes | ❌ | Schema exists, writes not connected |
+
+### Frontend — what is wired
+
+| Feature | Status | Notes |
+|---|---|---|
+| Login form → real auth-service | ✅ | Stores access + refresh tokens via Zustand session store |
+| Refresh-token rotation | ✅ | `client.ts` will need interceptor for auto-refresh |
+| Logout → revoke refresh token | ✅ | Calls `POST /v1/auth/logout` with refreshToken |
+| Dashboard KPI (live) | ✅ | TanStack Query, 30 s refetch, hits `GET /v1/stats/overview` |
+| WebSocket connection | ✅ | Fetches HMAC ticket, connects to realtime-gateway |
+| EN / RU language toggle | ✅ | Persisted to localStorage |
+| /profile page | ✅ | UI only — no backend persistence yet |
+| /register, /forgot-password | ✅ | UI flow only — no backend endpoints yet |
+| Onboarding agent installer | ⚠️ | Preview placeholder; `get.sequoia.io` not published |
+
+### Dev bootstrap
+
+```
+./scripts/dev-up.sh            # infra + keys + migrations
+./scripts/dev-up.sh services   # + build & start 4 services
+./scripts/dev-down.sh          # stop services
+./scripts/dev-down.sh full     # + stop docker-compose
+```
+
+Generated secrets and configs land in `backend/secrets/` and `backend/config/`
+(both `.gitignore`d).
+
+---
+
 ## 1. Service map
 
 ```
@@ -486,6 +538,17 @@ the old version, then it's dropped.
 
 ### 10.1 Authentication
 
+> **v0.1 actual implementation** (deviations from full design noted with ⚠️):
+
+- **Users**: Password login (Argon2id). OIDC not yet wired. ⚠️
+- **Devices**: ES256 device-JWT, separate keypair, audience `sequoia-device-channel`.
+  Full Ed25519 cert / Noise XX handshake is a future iteration. ⚠️
+- **WebSocket tickets**: HMAC-SHA256, 60 s TTL, 32-byte random key shared between
+  api-gateway and realtime-gateway via TOML config.
+- **Services**: Plain gRPC (no mTLS). ⚠️
+- **Plugins**: Not yet implemented. ⚠️
+
+Intended full design:
 - **Users**: OAuth2/OIDC (Google, GitHub, custom IDP) via `openidconnect` crate;
   fall back to password (Argon2id, m=64MiB t=3 p=1) + WebAuthn.
 - **Devices**: Ed25519 cert + bearer device-JWT (rotated daily).
@@ -601,16 +664,23 @@ thresholds (Google SRE workbook).
 
 ### 12.1 Local dev
 
-`docker compose -f deploy/docker/docker-compose.yml up` brings up:
+Use the bootstrap script (idempotent):
 
-- Postgres 16 + TimescaleDB
-- Redis 7 (cluster mode for parity)
-- OTLP collector + Jaeger + Prometheus + Grafana
-- MinIO (S3-compatible)
-- (Optional) Ollama for local LLM
-- (Optional) Vault dev mode
+```bash
+./scripts/dev-up.sh            # infra (postgres + redis) + keys + migrations
+./scripts/dev-up.sh services   # also build + start all 4 services
+```
 
-Services run with `cargo watch -x 'run -p sequoia-<svc>'` against the stack.
+The script brings up via docker compose:
+- Postgres 16 (TimescaleDB)
+- Redis 7
+
+Keys are generated into `backend/secrets/`, per-service TOML configs into
+`backend/config/`. See `scripts/dev-up.sh` for details.
+
+Full observability stack (OTLP, Jaeger, Prometheus, Grafana, MinIO) is defined
+in `deploy/docker/docker-compose.yml` under separate profiles — run
+`docker compose ... --profile observability up` when needed.
 
 ### 12.2 Container images
 
