@@ -63,15 +63,13 @@ export function Topbar() {
         </Button>
 
         {/* notifications */}
-        <Button size="icon" variant="ghost" aria-label="notifications" className="relative">
+        <Button size="icon" variant="ghost" aria-label="notifications">
           <Bell className="w-3.5 h-3.5" strokeWidth={1.6} />
-          <span className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-ember" />
         </Button>
 
         {/* user */}
         <button className="h-8 flex items-center gap-2 pl-1 pr-2 hover:bg-ink-100 rounded-sm transition-colors">
-          <span className="w-6 h-6 rounded-full bg-gradient-to-br from-ember to-flame text-ink-50 grid place-items-center text-[10.5px] font-semibold">HV</span>
-          <span className="text-[12px] text-bone-muted">hv@sequoia.io</span>
+          <span className="w-6 h-6 rounded-full bg-ink-200 border border-white/[0.10] grid place-items-center text-[10.5px] font-semibold text-bone-muted">U</span>
         </button>
       </div>
     </header>

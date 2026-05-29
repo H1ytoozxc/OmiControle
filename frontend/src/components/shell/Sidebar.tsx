@@ -10,40 +10,27 @@ import {
 import { cn } from "@/lib/utils";
 import { SignalDot } from "@/components/primitives";
 
-/**
- * Sidebar — the navigation rail.
- *
- * Aesthetic notes:
- *   - Fixed 220 px wide, hairline divider, no shadow.
- *   - Top: wordmark ("Sequoia" in italic serif) + tenant chip.
- *   - Middle: nav groups with monospace eyebrows.
- *   - Bottom: system status strip — live region from the realtime store.
- */
-
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Workspace",
     items: [
-      { href: "/dashboard",     label: "Overview",    icon: LayoutGrid,  kbd: "G H" },
-      { href: "/devices",       label: "Devices",     icon: Cpu,         kbd: "G D" },
-      { href: "/ai",            label: "AI Control",  icon: Bot,         kbd: "G A" },
-      { href: "/workflows",     label: "Workflows",   icon: Workflow,    kbd: "G W" },
+      { href: "/dashboard",     label: "Overview",    icon: LayoutGrid },
+      { href: "/devices",       label: "Devices",     icon: Cpu },
+      { href: "/ai",            label: "AI Control",  icon: Bot },
+      { href: "/workflows",     label: "Workflows",   icon: Workflow },
     ],
   },
   {
     label: "Operations",
     items: [
-      { href: "/notifications", label: "Notifications", icon: Bell,      badge: 3 },
+      { href: "/notifications", label: "Notifications", icon: Bell },
       { href: "/users",         label: "Identity",      icon: Users },
-      { href: "/audit",         label: "Audit",         icon: ShieldCheck },
     ],
   },
   {
     label: "System",
     items: [
-      { href: "/observability", label: "Observability", icon: Activity },
-      { href: "/console",       label: "Console",       icon: Terminal },
-      { href: "/settings",      label: "Settings",      icon: SlidersHorizontal },
+      { href: "/settings",  label: "Settings", icon: SlidersHorizontal },
     ],
   },
 ];
@@ -52,8 +39,6 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  badge?: number;
-  kbd?: string;
 };
 
 export function Sidebar() {
@@ -70,17 +55,8 @@ export function Sidebar() {
     >
       {/* wordmark */}
       <div className="px-5 pt-5 pb-4 flex items-center gap-2">
-        <span className="display-italic text-[26px] leading-none text-bone">Sequoia</span>
+        <span className="text-[20px] font-semibold text-bone tracking-tight">Sequoia</span>
         <span className="ml-auto eyebrow">v0.1</span>
-      </div>
-
-      {/* tenant chip */}
-      <div className="mx-3 mb-4 px-3 py-2 border border-white/[0.08] rounded-md bg-ink-100/50 hover:bg-ink-100 transition-colors cursor-pointer">
-        <div className="eyebrow text-[9.5px] mb-0.5">Tenant</div>
-        <div className="flex items-center gap-2 text-[13px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-ember" />
-          <span className="text-bone truncate">Anthropic · Production</span>
-        </div>
       </div>
 
       {/* nav groups */}
@@ -111,15 +87,6 @@ export function Sidebar() {
                       )}
                       <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
                       <span className="truncate">{item.label}</span>
-                      {item.badge ? (
-                        <span className="ml-auto text-[10px] font-mono text-ember tabular-nums">
-                          {item.badge}
-                        </span>
-                      ) : item.kbd ? (
-                        <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-[9.5px] font-mono text-bone-dim tracking-[0.1em]">
-                          {item.kbd}
-                        </span>
-                      ) : null}
                     </Link>
                   </li>
                 );
@@ -129,31 +96,13 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* system status */}
-      <SystemStrip />
+      {/* bottom strip — connection status only */}
+      <div className="px-3 py-3 border-t border-white/[0.06]">
+        <div className="flex items-center gap-2 text-[11px] font-mono text-bone-dim">
+          <SignalDot state="ok" />
+          <span>Connected</span>
+        </div>
+      </div>
     </aside>
-  );
-}
-
-function SystemStrip() {
-  // Wire to realtime store in a real app; mocked here.
-  return (
-    <div className="px-3 py-3 border-t border-white/[0.06] flex flex-col gap-1.5">
-      <Row label="Realtime"  state="ok"   value="WS · 12 ms" />
-      <Row label="API"       state="ok"   value="142 ms p99" />
-      <Row label="Workers"   state="warn" value="3 reclaim" />
-    </div>
-  );
-}
-
-function Row({ label, state, value }: { label: string; state: "ok" | "warn" | "crit"; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-[10.5px] font-mono uppercase tracking-[0.08em]">
-      <span className="flex items-center gap-1.5 text-bone-dim">
-        <SignalDot state={state} pulse />
-        {label}
-      </span>
-      <span className="text-bone-muted normal-case tracking-normal">{value}</span>
-    </div>
   );
 }
