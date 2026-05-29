@@ -1,6 +1,7 @@
 # Project Globals
 node_modules/
 .next/
+*.tsbuildinfo
 
 # Rust
 target/
