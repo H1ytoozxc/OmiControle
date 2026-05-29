@@ -122,7 +122,7 @@ export function Topbar() {
                 <MenuItem
                   icon={User}
                   label={t.topbar.profile}
-                  onClick={() => { setMenuOpen(false); router.push("/settings"); }}
+                  onClick={() => { setMenuOpen(false); router.push("/profile"); }}
                 />
                 <MenuItem
                   icon={SlidersHorizontal}
