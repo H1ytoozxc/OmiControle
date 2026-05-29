@@ -1,0 +1,34 @@
+[package]
+name = "sequoia-command-executor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "command-executor"
+path = "src/main.rs"
+
+[dependencies]
+sequoia-common.workspace = true
+sequoia-config.workspace = true
+sequoia-telemetry.workspace = true
+sequoia-auth.workspace = true
+sequoia-crypto.workspace = true
+sequoia-eventbus.workspace = true
+sequoia-proto.workspace = true
+
+tokio.workspace = true
+tonic.workspace = true
+tokio-stream.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow = { workspace = true }
+tracing.workspace = true
+time.workspace = true
+uuid.workspace = true
+ulid.workspace = true
+ed25519-dalek = { workspace = true }
+sha2.workspace = true

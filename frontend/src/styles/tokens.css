@@ -1,0 +1,80 @@
+/* =====================================================================
+   SEQUOIA OS — design tokens
+   ---------------------------------------------------------------------
+   The only place that defines colors, opacities, type & motion baselines.
+   Everything else (Tailwind, components, charts) references variables.
+   ===================================================================== */
+
+:root {
+  /* -- Surfaces (layered onyx) -- */
+  --ink:      8 9 12;          /* near-pure onyx, the void */
+  --ink-50:  11 12 16;         /* base layer */
+  --ink-100: 15 17 22;         /* card */
+  --ink-200: 22 26 34;         /* elevated */
+  --ink-300: 30 35 44;         /* hover */
+  --ink-400: 42 50 62;         /* active */
+  --ink-500: 56 66 80;         /* divider warm */
+
+  /* -- Text -- */
+  --bone:       246 244 238;   /* warm off-white #F6F4EE */
+  --bone-muted: 164 173 184;   /* secondary */
+  --bone-dim:    91 100 112;   /* tertiary / placeholder */
+
+  /* -- Hairlines (1px lines, used everywhere) -- */
+  --hairline: 255 255 255;     /* applied at low alpha */
+
+  /* -- Signal accents (chosen deliberately to avoid cliché) -- */
+  --ember:      255 179  71;   /* #FFB347 — primary signal, warmth, attention */
+  --ember-50:   255 220 168;
+  --ember-glow: 255 156  20;
+
+  --mint:       123 224 173;   /* #7BE0AD — healthy / live / connected */
+  --mint-dim:    62 132  99;
+
+  --flame:      255  95  61;   /* #FF5F3D — critical / fault */
+  --flame-dim:  178  54  31;
+
+  --steel:      107 138 168;   /* #6B8AA8 — neutral info, link, secondary action */
+  --steel-dim:   67  90 113;
+
+  /* -- Motion -- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo:  cubic-bezier(0.7, 0, 0.84, 0);
+  --dur-quick:  140ms;
+  --dur-base:   240ms;
+  --dur-slow:   480ms;
+  --dur-ambient: 2600ms;
+
+  /* -- Type rhythm -- */
+  --leading-tight:  1.12;
+  --leading-snug:   1.28;
+  --leading-normal: 1.5;
+  --tracking-tight: -0.022em;
+  --tracking-wide:  0.04em;
+
+  /* -- Type families (mapped from Google Fonts, loaded via CSS @import) -- */
+  --font-display: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-sans:    'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+
+  /* -- Radii -- */
+  --radius: 5px;
+}
+
+/* The default is dark — the platform was designed for it.
+   A light variant exists primarily for printed reports / external embeds. */
+.theme-light {
+  --ink:      252 251 247;
+  --ink-50:  247 245 240;
+  --ink-100: 240 237 230;
+  --ink-200: 230 226 217;
+  --ink-300: 215 210 200;
+  --ink-400: 195 189 178;
+  --ink-500: 160 155 145;
+
+  --bone:        24  24  24;
+  --bone-muted:  82  86  92;
+  --bone-dim:   140 146 154;
+
+  --hairline:    24  24  24;
+}

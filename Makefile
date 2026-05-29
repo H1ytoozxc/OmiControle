@@ -1,58 +1,54 @@
-.PHONY: help fmt lint test build run-dev migrate proto docker-up docker-down audit cover bench
+.PHONY: help \
+        backend-fmt backend-lint backend-test backend-build backend-migrate backend-proto backend-audit backend-cover backend-bench \
+        frontend-dev frontend-build frontend-lint frontend-type-check \
+        dev docker-up docker-down
+
+BACKEND  := backend
+FRONTEND := frontend
 
 help:
-	@echo "Sequoia — common dev targets:"
-	@echo "  make fmt           - cargo fmt across workspace"
-	@echo "  make lint          - cargo clippy --all-targets --all-features -D warnings"
-	@echo "  make test          - cargo test --workspace"
-	@echo "  make build         - cargo build --workspace --release"
-	@echo "  make migrate       - sqlx migrate run for each service schema"
-	@echo "  make proto         - regenerate gRPC bindings"
-	@echo "  make docker-up     - bring up dev stack (pg, redis, otel-collector, jaeger, prom)"
-	@echo "  make docker-down   - tear down dev stack"
-	@echo "  make audit         - cargo audit + cargo deny"
+	@echo "Sequoia monorepo — top-level targets:"
+	@echo ""
+	@echo "  Infrastructure"
+	@echo "    make docker-up          bring up postgres, redis, otel, jaeger, prometheus, grafana"
+	@echo "    make docker-down        tear down the dev stack"
+	@echo "    make dev                docker-up + backend API gateway + frontend dev server"
+	@echo ""
+	@echo "  Backend  (Rust / Cargo — delegates to backend/)"
+	@echo "    make backend-fmt        cargo fmt across workspace"
+	@echo "    make backend-lint       cargo clippy -D warnings"
+	@echo "    make backend-test       cargo nextest run"
+	@echo "    make backend-build      cargo build --release"
+	@echo "    make backend-migrate    sqlx migrate run for all schemas"
+	@echo "    make backend-proto      regenerate gRPC bindings"
+	@echo "    make backend-audit      cargo audit + cargo deny"
+	@echo "    make backend-cover      llvm-cov HTML report"
+	@echo "    make backend-bench      cargo bench"
+	@echo ""
+	@echo "  Frontend  (Next.js / npm — delegates to frontend/)"
+	@echo "    make frontend-dev       next dev"
+	@echo "    make frontend-build     next build"
+	@echo "    make frontend-lint      eslint"
+	@echo "    make frontend-type-check  tsc --noEmit"
 
-fmt:
-	cargo fmt --all
-
-lint:
-	cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-test:
-	cargo nextest run --workspace || cargo test --workspace
-
-build:
-	cargo build --workspace --release
-
-run-dev:
-	docker compose -f deploy/docker/docker-compose.yml up -d
-	cargo run -p sequoia-api-gateway
-
-migrate:
-	sqlx migrate run --source migrations/auth         --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/device       --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/ai           --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/workflow     --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/telemetry    --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/notification --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/plugin       --database-url $$DATABASE_URL
-	sqlx migrate run --source migrations/audit        --database-url $$DATABASE_URL
-
-proto:
-	cargo build -p sequoia-proto
+# ── Infrastructure ──────────────────────────────────────────────────────────
 
 docker-up:
-	docker compose -f deploy/docker/docker-compose.yml up -d
+	docker compose -f $(BACKEND)/deploy/docker/docker-compose.yml up -d
 
 docker-down:
-	docker compose -f deploy/docker/docker-compose.yml down -v
+	docker compose -f $(BACKEND)/deploy/docker/docker-compose.yml down -v
 
-audit:
-	cargo audit
-	cargo deny check
+dev: docker-up
+	$(MAKE) -C $(BACKEND) run-dev &
+	$(MAKE) -C $(FRONTEND) dev
 
-cover:
-	cargo llvm-cov nextest --workspace --html
+# ── Backend delegation ───────────────────────────────────────────────────────
 
-bench:
-	cargo bench --workspace
+backend-%:
+	$(MAKE) -C $(BACKEND) $*
+
+# ── Frontend delegation ──────────────────────────────────────────────────────
+
+frontend-%:
+	$(MAKE) -C $(FRONTEND) $*

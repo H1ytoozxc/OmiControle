@@ -1,0 +1,61 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sequoia OS",
+  "version": "0.1.0",
+  "identifier": "io.sequoia.desktop",
+  "build": {
+    "beforeDevCommand":   "SEQUOIA_DESKTOP=1 next dev -p 3001",
+    "beforeBuildCommand": "SEQUOIA_DESKTOP=1 next build",
+    "devUrl": "http://localhost:3001",
+    "frontendDist": "../out"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Sequoia",
+        "label": "main",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 720,
+        "decorations": true,
+        "transparent": false,
+        "backgroundColor": "#08090C",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 18 }
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/tray.png",
+      "iconAsTemplate": true,
+      "tooltip": "Sequoia OS"
+    },
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://api.sequoia.dev wss://ws.sequoia.dev; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'",
+      "dangerousDisableAssetCspModification": false
+    }
+  },
+  "plugins": {
+    "deep-link": { "schemes": ["sequoia"] },
+    "shell": { "open": "^https?://" },
+    "notification": {},
+    "window-state": {},
+    "store": {}
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "msi", "deb", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "© Sequoia 2026",
+    "category": "DeveloperTool",
+    "shortDescription": "Sequoia OS — control plane",
+    "longDescription": "Operate distributed devices, AI agents, and automation from one desktop instrument."
+  }
+}
