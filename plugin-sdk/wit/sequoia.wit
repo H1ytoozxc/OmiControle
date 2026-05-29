@@ -1,0 +1,49 @@
+// Sequoia plugin WIT contract (WASI Preview 2 component model).
+//
+// Plugin authors implement the `tools` interface; the host imports `host`
+// for capability-controlled side effects.
+
+package sequoia:plugin@0.1.0;
+
+interface types {
+  record context {
+    tenant: string,
+    actor: string,
+    correlation-id: string,
+  }
+  variant invocation-result {
+    ok(list<u8>),       // arbitrary bytes payload (e.g. JSON)
+    err(string),
+  }
+}
+
+interface host {
+  use types.{context};
+
+  // Structured logging — host attaches trace ids and routes to the
+  // platform's log pipeline.
+  log: func(level: string, msg: string);
+
+  // Tenant-scoped KV store. Capability-gated by `tenant.read` / equivalent.
+  kv-get: func(ctx: context, key: string) -> option<list<u8>>;
+  kv-put: func(ctx: context, key: string, value: list<u8>) -> result<_, string>;
+
+  // Publish an event onto the platform event bus. Capability-gated.
+  publish-event: func(ctx: context, topic: string, payload: list<u8>) -> result<_, string>;
+}
+
+interface tools {
+  use types.{context, invocation-result};
+
+  // Primary entry point. The host invokes this with a typed payload
+  // (usually JSON or msgpack); the plugin returns bytes.
+  invoke: func(ctx: context, payload: list<u8>) -> invocation-result;
+
+  // Metadata: plugin returns a list of named exports it provides.
+  describe: func() -> list<string>;
+}
+
+world plugin {
+  import host;
+  export tools;
+}

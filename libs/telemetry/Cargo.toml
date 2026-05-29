@@ -1,0 +1,20 @@
+[package]
+name = "sequoia-telemetry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenTelemetry tracing + metrics + structured logging — initialized once per binary."
+
+[dependencies]
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-opentelemetry.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-semantic-conventions.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+thiserror.workspace = true
+serde.workspace = true

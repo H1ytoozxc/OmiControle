@@ -1,0 +1,70 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "sequoia/v1/common.proto";
+
+service PluginHost {
+  rpc UploadBundle  (UploadBundleRequest)  returns (Bundle);
+  rpc InstallPlugin (InstallRequest)       returns (Installation);
+  rpc UninstallPlugin (UninstallRequest)   returns (Empty);
+  rpc Invoke        (InvokeRequest)        returns (InvokeResponse);
+  rpc ListInstalled (ListInstalledRequest) returns (ListInstalledResponse);
+}
+
+message Bundle {
+  string id           = 1;
+  string name         = 2;
+  string version      = 3;
+  string sha256       = 4;
+  bytes  signature    = 5;
+  string manifest_json = 6;
+}
+
+message UploadBundleRequest {
+  RequestContext context = 1;
+  string name            = 2;
+  string version         = 3;
+  bytes  wasm_bytes      = 4;
+  bytes  signature       = 5;
+  string manifest_json   = 6;
+}
+
+message InstallRequest {
+  RequestContext context = 1;
+  string bundle_id       = 2;
+}
+
+message Installation {
+  string id          = 1;
+  string bundle_id   = 2;
+  string status      = 3;  // pending | active | failed
+}
+
+message UninstallRequest {
+  RequestContext context = 1;
+  string installation_id = 2;
+}
+
+message InvokeRequest {
+  RequestContext context = 1;
+  string installation_id = 2;
+  string export_name     = 3;
+  bytes  payload         = 4;
+  uint32 fuel_limit      = 5;
+}
+
+message InvokeResponse {
+  bytes  result          = 1;
+  uint64 fuel_consumed   = 2;
+  uint32 duration_ms     = 3;
+}
+
+message ListInstalledRequest {
+  RequestContext context = 1;
+  PageRequest    page    = 2;
+}
+
+message ListInstalledResponse {
+  repeated Installation items = 1;
+  string next_cursor          = 2;
+}

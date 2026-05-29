@@ -1,0 +1,41 @@
+[package]
+name = "sequoia-api-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "api-gateway"
+path = "src/main.rs"
+
+[dependencies]
+sequoia-common.workspace = true
+sequoia-config.workspace = true
+sequoia-telemetry.workspace = true
+sequoia-auth.workspace = true
+sequoia-proto.workspace = true
+
+tokio.workspace = true
+axum.workspace = true
+axum-extra.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+hyper.workspace = true
+tonic.workspace = true
+prost.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow = { workspace = true }
+tracing.workspace = true
+time.workspace = true
+url.workspace = true
+uuid.workspace = true
+ulid.workspace = true
+
+governor.workspace = true
+moka.workspace = true
+arc-swap.workspace = true
+async-trait.workspace = true
+parking_lot.workspace = true

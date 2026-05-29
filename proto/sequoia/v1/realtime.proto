@@ -1,0 +1,34 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "sequoia/v1/common.proto";
+
+service RealtimeService {
+  // Server-streamed events for a subscription set. Used internally by other
+  // services to fan into their own consumers; external clients use WebSocket.
+  rpc Subscribe (SubscribeRequest) returns (stream Event);
+
+  // Publish an event to the realtime tier (gateway-only).
+  rpc Publish (PublishRequest) returns (Empty);
+}
+
+message SubscribeRequest {
+  RequestContext context = 1;
+  repeated string topics = 2;
+  // Optional resume token (last delivered offset) for at-least-once replay.
+  string resume_from     = 3;
+}
+
+message Event {
+  string id              = 1;
+  string topic           = 2;
+  string kind            = 3;
+  bytes  payload         = 4;
+  uint64 ts_unix_ms      = 5;
+}
+
+message PublishRequest {
+  RequestContext context = 1;
+  string         topic   = 2;
+  Event          event   = 3;
+}

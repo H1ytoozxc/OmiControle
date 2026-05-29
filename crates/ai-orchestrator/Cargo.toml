@@ -1,0 +1,40 @@
+[package]
+name = "sequoia-ai-orchestrator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ai-orchestrator"
+path = "src/main.rs"
+
+[dependencies]
+sequoia-common.workspace = true
+sequoia-config.workspace = true
+sequoia-telemetry.workspace = true
+sequoia-db.workspace = true
+sequoia-eventbus.workspace = true
+sequoia-proto.workspace = true
+
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+prost.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+sqlx.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow = { workspace = true }
+tracing.workspace = true
+time.workspace = true
+uuid.workspace = true
+ulid.workspace = true
+dashmap.workspace = true
+moka.workspace = true
+backoff.workspace = true

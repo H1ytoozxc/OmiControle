@@ -1,0 +1,26 @@
+[package]
+name = "sequoia-agent-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sequoia-crypto.workspace = true
+sequoia-proto.workspace = true
+
+tokio.workspace = true
+tonic.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+backoff.workspace = true
+time.workspace = true
+ulid.workspace = true
+sha2.workspace = true
+tokio-stream.workspace = true
+parking_lot.workspace = true
+anyhow = { workspace = true }
+prost-types.workspace = true

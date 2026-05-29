@@ -1,0 +1,79 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "sequoia/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service WorkflowEngine {
+  rpc CreateDefinition (CreateDefinitionRequest) returns (Definition);
+  rpc StartInstance    (StartInstanceRequest)    returns (Instance);
+  rpc GetInstance      (GetInstanceRequest)      returns (Instance);
+  rpc ListInstances    (ListInstancesRequest)    returns (ListInstancesResponse);
+  rpc CancelInstance   (CancelInstanceRequest)   returns (Empty);
+  rpc StreamEvents     (StreamEventsRequest)     returns (stream WorkflowEvent);
+}
+
+message Definition {
+  string id           = 1;
+  string tenant_id    = 2;
+  string name         = 3;
+  uint32 version      = 4;
+  string spec_json    = 5;  // DAG specification
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message Instance {
+  string id            = 1;
+  string definition_id = 2;
+  string status        = 3;
+  string cursor        = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp ended_at   = 6;
+  string variables_json = 7;
+}
+
+message CreateDefinitionRequest {
+  RequestContext context = 1;
+  string name            = 2;
+  string spec_json       = 3;
+}
+
+message StartInstanceRequest {
+  RequestContext context  = 1;
+  string definition_id    = 2;
+  string variables_json   = 3;
+  string idempotency_key  = 4;
+}
+
+message GetInstanceRequest {
+  RequestContext context = 1;
+  string instance_id     = 2;
+}
+
+message ListInstancesRequest {
+  RequestContext context = 1;
+  PageRequest    page    = 2;
+  string         status  = 3;
+}
+
+message ListInstancesResponse {
+  repeated Instance items = 1;
+  string next_cursor      = 2;
+}
+
+message CancelInstanceRequest {
+  RequestContext context = 1;
+  string instance_id     = 2;
+}
+
+message StreamEventsRequest {
+  RequestContext context = 1;
+  string instance_id     = 2;
+}
+
+message WorkflowEvent {
+  string kind = 1;
+  string step_id = 2;
+  string detail_json = 3;
+  google.protobuf.Timestamp at = 4;
+}

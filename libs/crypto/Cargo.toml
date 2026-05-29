@@ -1,0 +1,21 @@
+[package]
+name = "sequoia-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Symmetric (XChaCha20-Poly1305) + asymmetric (Ed25519, X25519) primitives, KMS abstraction."
+
+[dependencies]
+chacha20poly1305.workspace = true
+ed25519-dalek.workspace = true
+x25519-dalek.workspace = true
+ring.workspace = true
+rand.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+base64.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+zeroize = { version = "1.8", features = ["derive"] }
+async-trait.workspace = true

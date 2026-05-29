@@ -1,0 +1,21 @@
+[package]
+name = "sequoia-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "JWT issue/verify (ES256), JWKS cache, RBAC policy evaluation."
+
+[dependencies]
+sequoia-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+jsonwebtoken.workspace = true
+time.workspace = true
+moka.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+ulid.workspace = true

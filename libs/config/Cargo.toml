@@ -1,0 +1,14 @@
+[package]
+name = "sequoia-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "12-factor config loader: env + file + secrets, merged with precedence."
+
+[dependencies]
+serde.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+clap.workspace = true

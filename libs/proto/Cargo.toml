@@ -1,0 +1,17 @@
+[package]
+name = "sequoia-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generated gRPC bindings for all internal services."
+
+[dependencies]
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+serde.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true

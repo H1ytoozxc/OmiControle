@@ -1,0 +1,50 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "sequoia/v1/common.proto";
+
+service TelemetryService {
+  rpc Ingest (stream TelemetryBatch) returns (IngestResponse);
+  rpc QueryMetrics (QueryMetricsRequest) returns (QueryMetricsResponse);
+}
+
+message TelemetryBatch {
+  RequestContext context = 1;
+  repeated TelemetryPoint points = 2;
+}
+
+message TelemetryPoint {
+  string device_id      = 1;
+  string metric         = 2;
+  double value          = 3;
+  uint64 ts_unix_ms     = 4;
+  map<string, string> labels = 5;
+}
+
+message IngestResponse {
+  uint64 accepted = 1;
+  uint64 rejected = 2;
+}
+
+message QueryMetricsRequest {
+  RequestContext context = 1;
+  string metric          = 2;
+  uint64 from_unix_ms    = 3;
+  uint64 to_unix_ms      = 4;
+  string aggregator      = 5;  // sum | avg | p50 | p95 | p99
+  uint32 step_seconds    = 6;
+}
+
+message QueryMetricsResponse {
+  repeated MetricSeries series = 1;
+}
+
+message MetricSeries {
+  map<string, string> labels = 1;
+  repeated DataPoint points  = 2;
+}
+
+message DataPoint {
+  uint64 ts_unix_ms = 1;
+  double value      = 2;
+}

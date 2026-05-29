@@ -1,0 +1,77 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "sequoia/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service AuthService {
+  // Issue an access+refresh pair after primary auth (password / OIDC).
+  rpc IssueTokens (IssueTokensRequest) returns (TokenPair);
+
+  // Rotate a refresh token. The previous token is invalidated atomically.
+  rpc Refresh (RefreshRequest) returns (TokenPair);
+
+  // Verify an access token. Used by internal services when they cannot rely
+  // on the gateway having verified upstream (e.g. server-initiated calls).
+  rpc Verify (VerifyRequest) returns (VerifyResponse);
+
+  // Issue a short-lived ticket for the WebSocket gateway. Tickets are 60s
+  // single-use and bound to the client's IP.
+  rpc IssueWsTicket (RequestContext) returns (WsTicket);
+
+  // Lookup the JWKS published by this issuer (mirrors /.well-known/jwks.json).
+  rpc Jwks (Empty) returns (JwksResponse);
+}
+
+message IssueTokensRequest {
+  RequestContext context = 1;
+  oneof primary {
+    PasswordCreds password = 10;
+    OidcCallback  oidc     = 11;
+  }
+}
+
+message PasswordCreds {
+  string email    = 1;
+  string password = 2;
+}
+
+message OidcCallback {
+  string provider = 1;
+  string code     = 2;
+  string state    = 3;
+}
+
+message TokenPair {
+  string access_token  = 1;
+  string refresh_token = 2;
+  uint32 access_ttl_s  = 3;
+  uint32 refresh_ttl_s = 4;
+}
+
+message RefreshRequest {
+  RequestContext context       = 1;
+  string         refresh_token = 2;
+}
+
+message VerifyRequest {
+  string access_token = 1;
+  string audience     = 2;
+}
+
+message VerifyResponse {
+  Actor  actor          = 1;
+  string tenant_id      = 2;
+  google.protobuf.Timestamp issued_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  repeated string scopes = 5;
+}
+
+message WsTicket {
+  string ticket           = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message JwksResponse {
+  string keys_json = 1;  // verbatim JSON for cache-friendly serving
+}

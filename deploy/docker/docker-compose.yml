@@ -1,0 +1,115 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      POSTGRES_USER: sequoia
+      POSTGRES_PASSWORD: sequoia
+      POSTGRES_DB: sequoia
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sequoia -d sequoia"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [ "redis-data:/data" ]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports: ["9000:9000", "9001:9001"]
+    environment:
+      MINIO_ROOT_USER: sequoia
+      MINIO_ROOT_PASSWORD: sequoia-secret-change
+    volumes: ["minio-data:/data"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.110.0
+    command: ["--config=/etc/otel-config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["16686:16686"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports: ["3000:3000"]
+    depends_on: [prometheus, jaeger]
+
+  # --- Sequoia services (build via Dockerfile per service) ---
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args: { SVC: api-gateway }
+    env_file: ../../.env
+    depends_on: [postgres, redis, otel-collector]
+    ports: ["8080:8080"]
+
+  auth-service:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: auth-service } }
+    env_file: ../../.env
+    depends_on: [postgres, redis]
+
+  device-service:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: device-service } }
+    env_file: ../../.env
+    depends_on: [postgres, redis]
+    ports: ["9082:9082"]
+
+  ai-orchestrator:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: ai-orchestrator } }
+    env_file: ../../.env
+
+  realtime-gateway:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: realtime-gateway } }
+    env_file: ../../.env
+    depends_on: [redis]
+    ports: ["8083:8083"]
+
+  telemetry-service:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: telemetry-service } }
+    env_file: ../../.env
+
+  notification-service:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: notification-service } }
+    env_file: ../../.env
+
+  workflow-engine:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: workflow-engine } }
+    env_file: ../../.env
+
+  plugin-host:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: plugin-host } }
+    env_file: ../../.env
+
+  command-executor:
+    build: { context: ../.., dockerfile: deploy/docker/Dockerfile, args: { SVC: command-executor } }
+    env_file: ../../.env
+
+volumes:
+  pgdata:
+  redis-data:
+  minio-data:

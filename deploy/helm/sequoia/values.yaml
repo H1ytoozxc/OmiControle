@@ -1,0 +1,47 @@
+global:
+  image:
+    registry: ghcr.io/sequoia
+    pullPolicy: IfNotPresent
+    tag: 0.1.0
+  serviceMesh: linkerd       # linkerd | istio | none
+  observability:
+    otlpEndpoint: http://opentelemetry-collector.observability.svc:4317
+
+postgres:
+  external:
+    url: ""                   # set to use an out-of-cluster Postgres
+  cnpg:
+    enabled: true             # provision via CloudNativePG operator
+    instances: 3
+    storageSize: 200Gi
+
+redis:
+  external:
+    url: ""
+  cluster:
+    enabled: true
+    shards: 3
+    replicasPerShard: 1
+
+services:
+  apiGateway:        { replicas: 3, resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: 2, memory: 1Gi } } }
+  authService:       { replicas: 2 }
+  deviceService:     { replicas: 5 }
+  realtimeGateway:   { replicas: 5 }
+  aiOrchestrator:    { replicas: 2 }
+  telemetryService:  { replicas: 2 }
+  notificationService: { replicas: 2 }
+  workflowEngine:    { replicas: 4 }
+  pluginHost:        { replicas: 2 }
+  commandExecutor:   { replicas: 2 }
+
+ingress:
+  enabled: true
+  className: nginx
+  hostnames:
+    api: api.sequoia.example
+    ws:  ws.sequoia.example
+
+externalSecrets:
+  enabled: true
+  store: vault

@@ -1,0 +1,53 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "sequoia/v1/common.proto";
+
+service CommandExecutor {
+  // Dispatch a command to a device. Returns immediately with command_id;
+  // result arrives via Subscribe (or the Realtime stream).
+  rpc Dispatch (DispatchRequest) returns (DispatchResponse);
+
+  // Subscribe to result events for a command.
+  rpc StreamResult (StreamResultRequest) returns (stream CommandResultEvent);
+}
+
+message DispatchRequest {
+  RequestContext context = 1;
+  string device_id       = 2;
+  string kind            = 3;  // exec | transfer | plugin
+  bytes  payload         = 4;
+  uint32 timeout_ms      = 5;
+  string idempotency_key = 6;
+}
+
+message DispatchResponse {
+  string command_id = 1;
+}
+
+message StreamResultRequest {
+  RequestContext context = 1;
+  string command_id      = 2;
+}
+
+message CommandResultEvent {
+  oneof body {
+    Started         started        = 1;
+    Output          stdout_delta   = 2;
+    Output          stderr_delta   = 3;
+    Finished        finished       = 4;
+  }
+}
+
+message Started {
+  uint64 at_unix_ms = 1;
+}
+
+message Output {
+  bytes data = 1;
+}
+
+message Finished {
+  int32 exit_code = 1;
+  uint32 duration_ms = 2;
+}

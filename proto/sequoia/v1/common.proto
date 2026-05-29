@@ -1,0 +1,47 @@
+syntax = "proto3";
+package sequoia.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Every request carries this. Set at the inbound boundary and propagated by
+// the gRPC interceptor through internal hops.
+message RequestContext {
+  string tenant_id      = 1;  // ULID
+  Actor  actor          = 2;
+  string correlation_id = 3;  // W3C traceparent-compatible id
+  string causation_id   = 4;  // optional upstream correlation
+  string client_ip      = 5;
+  map<string, string> labels = 6;
+}
+
+message Actor {
+  enum Kind {
+    USER    = 0;
+    DEVICE  = 1;
+    SERVICE = 2;
+    PLUGIN  = 3;
+    SYSTEM  = 4;
+  }
+  Kind   kind        = 1;
+  string id          = 2;
+  repeated string scopes = 3;
+  Actor on_behalf_of = 4;
+}
+
+message Cursor {
+  string next = 1;
+}
+
+message PageRequest {
+  string cursor = 1;
+  uint32 limit  = 2;
+}
+
+message Empty {}
+
+message Error {
+  string code        = 1;
+  string message     = 2;
+  string trace_id    = 3;
+  google.protobuf.Timestamp at = 4;
+}
