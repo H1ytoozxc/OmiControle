@@ -22,6 +22,10 @@ const T = {
     topbar: {
       search: "Search · ask · command…",
       askSequoia: "Ask Sequoia",
+      profile: "Profile",
+      settings: "Settings",
+      signOut: "Sign out",
+      guest: "Guest",
     },
     login: {
       headline: "One control plane for your entire fleet.",
@@ -203,6 +207,10 @@ const T = {
     topbar: {
       search: "Поиск · команды…",
       askSequoia: "Спросить Sequoia",
+      profile: "Профиль",
+      settings: "Настройки",
+      signOut: "Выйти",
+      guest: "Гость",
     },
     login: {
       headline: "Единый центр управления всем флотом.",
